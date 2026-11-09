@@ -2,7 +2,7 @@
 //
 // Replaces the draw function of the Nayru's Love diamond (ACTOR_MAGIC_DARK) with a faceted gem whose vertex colors
 // are recomputed every frame from the view angle (thin-film style iridescence), plus a specular highlight, a light
-// band sweeping over the facets, a glowing inner core and small sparkles on the surface.
+// band sweeping over the facets and small sparkles on the surface.
 
 #include <libultraship/bridge/consolevariablebridge.h>
 
@@ -344,20 +344,13 @@ extern "C" void NayrusCrystal_Draw(Actor* thisx, PlayState* play) {
     Gfx* dl = POLY_XLU_DISP;
     SetupGemMaterial(dl);
 
-    // 1. Inner core: a small warm copy of the gem glowing from inside
-    LoadGemMatrix(play, dl, pos, -yaw * 2, scaleXZ * 0.38f, scaleY * 0.42f);
-    gSPSetGeometryMode(dl++, G_CULL_BACK);
-    gDPSetPrimColor(dl++, 0, 0, 255, 215, 240, (u8)(150 * fade));
-    DrawGemTriangles(dl, vtx);
-
-    // 2. Back facets, seen through the front: dimmer and slightly tinted
+    // 1. Back facets, seen through the front: dimmer and slightly tinted
     LoadGemMatrix(play, dl, pos, yaw, scaleXZ, scaleY);
-    gSPClearGeometryMode(dl++, G_CULL_BOTH);
     gSPSetGeometryMode(dl++, G_CULL_FRONT);
     gDPSetPrimColor(dl++, 0, 0, 225, 230, 255, (u8)(90 * fade));
     DrawGemTriangles(dl, vtx);
 
-    // 3. Front facets
+    // 2. Front facets
     gSPClearGeometryMode(dl++, G_CULL_BOTH);
     gSPSetGeometryMode(dl++, G_CULL_BACK);
     gDPSetPrimColor(dl++, 0, 0, 255, 255, 255, (u8)(255 * fade));
@@ -366,7 +359,7 @@ extern "C" void NayrusCrystal_Draw(Actor* thisx, PlayState* play) {
 
     POLY_XLU_DISP = dl;
 
-    // 4. Sparkles glinting on the surface
+    // 3. Sparkles glinting on the surface
     DrawSparkles(play, dl, pos, yaw, scaleXZ, scaleY, fade);
     POLY_XLU_DISP = dl;
 
