@@ -121,7 +121,7 @@ static void BossGoma_Phase2Slam(BossGoma* this, PlayState* play) {
 
 /**
  * Phase 2 intro, part 2: a short cutscene. The music stops, Gohma screams while the camera circles her and the room
- * fills with glowing red fog; then a shot on Link, startled. Afterwards the boss music starts again and she heads for
+ * fades into the fog of her death scene; then a telephoto shot on Link, startled. Afterwards the boss music starts again and she heads for
  * the ceiling.
  */
 static void BossGoma_SetupPhase2Roar(BossGoma* this, PlayState* play) {
@@ -147,27 +147,9 @@ static void BossGoma_SetupPhase2Roar(BossGoma* this, PlayState* play) {
     Audio_QueueSeqCmd(0x1 << 28 | SEQ_PLAYER_BGM_MAIN << 24 | 0x100FF);
 }
 
-/**
- * Glowing red fog over the whole room: fog pulled in and tinted red, ambient and main light pushed toward red.
- * intensity 0..1, 0 restores the room's own lighting.
- */
-static void BossGoma_SetRedFog(PlayState* play, f32 intensity) {
-    play->envCtx.adjFogColor[0] = (s16)(200.0f * intensity);
-    play->envCtx.adjFogColor[1] = (s16)(-40.0f * intensity);
-    play->envCtx.adjFogColor[2] = (s16)(-40.0f * intensity);
-    play->envCtx.adjAmbientColor[0] = (s16)(110.0f * intensity);
-    play->envCtx.adjAmbientColor[1] = (s16)(-25.0f * intensity);
-    play->envCtx.adjAmbientColor[2] = (s16)(-25.0f * intensity);
-    play->envCtx.adjLight1Color[0] = (s16)(90.0f * intensity);
-    play->envCtx.adjLight1Color[1] = (s16)(-30.0f * intensity);
-    play->envCtx.adjLight1Color[2] = (s16)(-30.0f * intensity);
-    play->envCtx.adjFogNear = (s16)((650.0f - play->envCtx.lightSettings.fogNear) * intensity);
-}
-
 static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
     s16 elapsed = BOSSGOMA_PHASE2_ROAR_FRAMES - this->framesUntilNextAction;
-    f32 fog;
 
     SkelAnime_Update(&this->skelanime);
     Math_ApproachS(&this->actor.shape.rot.x, 0, 2, 0xBB8);
@@ -182,18 +164,15 @@ static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
     Math_ApproachF(&this->eyeIrisScaleY, 1.3f + 0.25f * Math_CosS(elapsed * 0x1500), 0.5f, 0.3f);
     this->visualState = VISUALSTATE_RED;
 
-    // Red fog: swells in with the first scream, glows (pulsing with her cries) and clears during the shot on Link
-    if (elapsed < 8) {
-        fog = 0.0f;
-    } else if (elapsed < 28) {
-        fog = (elapsed - 8) / 20.0f;
-    } else if (elapsed < BOSSGOMA_PHASE2_ROAR_FRAMES - 25) {
-        fog = 1.0f;
-    } else {
-        fog = this->framesUntilNextAction / 25.0f;
+    // Room lighting: blend to the boss room's light setting 3, the fog that rolls in when Gohma dissolves at the end
+    // of the fight, and back to the fight lighting (setting 4) for the shot on Link
+    if (elapsed == 8) {
+        play->envCtx.unk_BF = 3;
+        play->envCtx.unk_D6 = 0xFFFF;
+    } else if (elapsed == BOSSGOMA_PHASE2_LINK_SHOT_FRAME) {
+        play->envCtx.unk_BF = 4;
+        play->envCtx.unk_D6 = 0xFFFF;
     }
-    fog *= 0.85f + 0.15f * Math_SinS(elapsed * 0x900);
-    BossGoma_SetRedFog(play, fog);
 
     if (elapsed < BOSSGOMA_PHASE2_LINK_SHOT_FRAME) {
         // Shot 1: the camera circles Gohma, slightly below her eye line
@@ -207,21 +186,22 @@ static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
         Math_ApproachF(&this->subCameraAt.y, this->actor.focus.pos.y, 0.3f, 40.0f);
         Math_ApproachF(&this->subCameraAt.z, this->actor.focus.pos.z, 0.3f, 40.0f);
     } else {
-        // Shot 2: hard cut to Link's face, he flinches in shock
+        // Shot 2: hard cut to Link's face, he flinches in shock. Telephoto: far away with a narrow field of view
         Vec3f* head = &player->bodyPartsPos[PLAYER_BODYPART_HEAD];
         s16 linkYaw = Math_Vec3f_Yaw(&player->actor.world.pos, &this->actor.world.pos);
 
         if (elapsed == BOSSGOMA_PHASE2_LINK_SHOT_FRAME) {
             player->actor.shape.rot.y = player->actor.world.rot.y = player->yaw = linkYaw;
             Player_SetCsActionWithHaltedActors(play, &this->actor, LINK_IS_ADULT ? 5 : 59); // startled animation
+            Play_CameraSetFov(play, this->subCameraId, 16.0f);
         }
         player->actor.shape.face = 7; // wide eyes, grimacing mouth (PLAYER_FACE_SURPRISED in the decomp)
 
-        this->subCameraEye.x = head->x + Math_SinS(linkYaw) * 75.0f + Math_SinS(linkYaw + 0x4000) * 18.0f;
-        this->subCameraEye.y = head->y + 2.0f;
-        this->subCameraEye.z = head->z + Math_CosS(linkYaw) * 75.0f + Math_CosS(linkYaw + 0x4000) * 18.0f;
+        this->subCameraEye.x = head->x + Math_SinS(linkYaw) * 180.0f + Math_SinS(linkYaw + 0x4000) * 40.0f;
+        this->subCameraEye.y = head->y + 6.0f;
+        this->subCameraEye.z = head->z + Math_CosS(linkYaw) * 180.0f + Math_CosS(linkYaw + 0x4000) * 40.0f;
         this->subCameraAt.x = head->x;
-        this->subCameraAt.y = head->y - 4.0f;
+        this->subCameraAt.y = head->y + 1.0f;
         this->subCameraAt.z = head->z;
     }
     Play_CameraSetAtEye(play, this->subCameraId, &this->subCameraAt, &this->subCameraEye);
@@ -229,7 +209,6 @@ static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
     if (this->framesUntilNextAction == 0) {
         Camera* cam = Play_GetCamera(play, 0);
 
-        BossGoma_SetRedFog(play, 0.0f);
         cam->eye = this->subCameraEye;
         cam->eyeNext = this->subCameraEye;
         cam->at = this->subCameraAt;
