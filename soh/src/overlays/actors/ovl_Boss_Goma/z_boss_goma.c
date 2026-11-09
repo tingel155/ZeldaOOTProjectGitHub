@@ -61,11 +61,15 @@ void BossGoma_SpawnChildGohma(BossGoma* this, PlayState* play, s16 i);
 #define BOSSGOMA_PHASE2_VOLLEY_FRAMES 110
 #define BOSSGOMA_PHASE2_ROAR_FRAMES 80
 static u8 sZopPhase2Announced;
+static u8 sZopRecolorDirty;
 static s16 sZopRoarCamAngle;
 
 static s32 BossGoma_InPhase2(BossGoma* this) {
     return ZOP_BossPhase2(&this->actor, 10);
 }
+
+// Phase 2: everything she does with her legs is 20% faster
+#define BOSSGOMA_P2_SPEED(x) ((x) * (BossGoma_InPhase2(this) ? 1.2f : 1.0f))
 
 static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play);
 void BossGoma_SetupFloorMain(BossGoma* this);
@@ -427,6 +431,9 @@ void BossGoma_Init(Actor* thisx, PlayState* play) {
     this->actor.colChkInfo.health = 10;
     this->actor.colChkInfo.mass = MASS_IMMOVABLE;
     sZopPhase2Announced = false;
+    // Undo a recolor left over from an earlier fight; the texture cache is flushed on the next draw
+    ZOP_GohmaSetRecolor(0.0f);
+    sZopRecolorDirty = true;
     Collider_InitJntSph(play, &this->collider);
     Collider_SetJntSph(play, &this->collider, &this->actor, &sColliderJntSphInit, this->colliderItems);
 
@@ -480,6 +487,8 @@ void BossGoma_Destroy(Actor* thisx, PlayState* play) {
 
     SkelAnime_Free(&this->skelanime, play);
     Collider_DestroyJntSph(play, &this->collider);
+    // The textures are shared resources: hand them back in their original colors
+    ZOP_GohmaSetRecolor(0.0f);
 }
 
 /**
@@ -578,7 +587,7 @@ void BossGoma_SetupCeilingPrepareSpawnGohmas(BossGoma* this) {
 }
 
 void BossGoma_SetupWallClimb(BossGoma* this) {
-    Animation_Change(&this->skelanime, &gGohmaClimbAnim, 1.0f, 0.0f, Animation_GetLastFrame(&gGohmaClimbAnim),
+    Animation_Change(&this->skelanime, &gGohmaClimbAnim, BOSSGOMA_P2_SPEED(1.0f), 0.0f, Animation_GetLastFrame(&gGohmaClimbAnim),
                      ANIMMODE_LOOP, -10.0f);
     this->actionFunc = BossGoma_WallClimb;
     this->actor.speedXZ = 0.0f;
@@ -590,7 +599,8 @@ void BossGoma_SetupWallClimb(BossGoma* this) {
  * Gohma either reached the ceiling after climbing a wall, or is waiting for the player to kill the (children) Gohmas.
  */
 void BossGoma_SetupCeilingMoveToCenter(BossGoma* this) {
-    Animation_Change(&this->skelanime, &gGohmaWalkAnim, 1.0f, 0.0f, Animation_GetLastFrame(&gGohmaWalkAnim),
+    Animation_Change(&this->skelanime, &gGohmaWalkAnim, BOSSGOMA_P2_SPEED(1.0f), 0.0f,
+                     Animation_GetLastFrame(&gGohmaWalkAnim),
                      ANIMMODE_LOOP, -5.0f);
     this->actionFunc = BossGoma_CeilingMoveToCenter;
     this->actor.speedXZ = 0.0f;
@@ -603,7 +613,7 @@ void BossGoma_SetupCeilingMoveToCenter(BossGoma* this) {
  * Root action when on the floor, leads to attacking or climbing.
  */
 void BossGoma_SetupFloorMain(BossGoma* this) {
-    Animation_Change(&this->skelanime, &gGohmaWalkCrouchedAnim, ZOP_AGGRO(1.0f, 1.6f), 0.0f,
+    Animation_Change(&this->skelanime, &gGohmaWalkCrouchedAnim, BOSSGOMA_P2_SPEED(ZOP_AGGRO(1.0f, 1.6f)), 0.0f,
                      Animation_GetLastFrame(&gGohmaWalkCrouchedAnim), ANIMMODE_LOOP, -5.0f);
     this->actionFunc = BossGoma_FloorMain;
     this->framesUntilNextAction = Rand_S16Offset(70, 110);
@@ -643,7 +653,7 @@ void BossGoma_SetupFloorStunned(BossGoma* this) {
  * Take an attack posture, when the player is close enough.
  */
 void BossGoma_SetupFloorAttackPosture(BossGoma* this) {
-    Animation_Change(&this->skelanime, &gGohmaPrepareAttackAnim, ZOP_AGGRO(1.0f, 1.5f), 0.0f,
+    Animation_Change(&this->skelanime, &gGohmaPrepareAttackAnim, BOSSGOMA_P2_SPEED(ZOP_AGGRO(1.0f, 1.5f)), 0.0f,
                      Animation_GetLastFrame(&gGohmaPrepareAttackAnim), ANIMMODE_ONCE, -10.0f);
     this->actionFunc = BossGoma_FloorAttackPosture;
 }
@@ -659,7 +669,7 @@ void BossGoma_SetupFloorPrepareAttack(BossGoma* this) {
 }
 
 void BossGoma_SetupFloorAttack(BossGoma* this) {
-    Animation_Change(&this->skelanime, &gGohmaAttackAnim, ZOP_AGGRO(1.0f, 1.3f), 0.0f,
+    Animation_Change(&this->skelanime, &gGohmaAttackAnim, BOSSGOMA_P2_SPEED(ZOP_AGGRO(1.0f, 1.3f)), 0.0f,
                      Animation_GetLastFrame(&gGohmaAttackAnim),
                      ANIMMODE_ONCE, -10.0f);
     this->actionFunc = BossGoma_FloorAttack;
@@ -691,7 +701,7 @@ void BossGoma_UpdateCeilingMovement(BossGoma* this, PlayState* play, f32 dz, f32
 
     roomCenter.z += dz; // dz is always 0
     SkelAnime_Update(&this->skelanime);
-    Math_ApproachF(&this->actor.speedXZ, targetSpeedXZ, 0.5f, 2.0f);
+    Math_ApproachF(&this->actor.speedXZ, BOSSGOMA_P2_SPEED(targetSpeedXZ), 0.5f, 2.0f);
 
     if (rotateTowardsCenter) {
         Math_ApproachS(&this->actor.world.rot.y, Math_Vec3f_Yaw(&this->actor.world.pos, &roomCenter) + 0x8000, 3,
@@ -1741,20 +1751,20 @@ void BossGoma_FloorMain(BossGoma* this, PlayState* play) {
                 BossGoma_SetupFloorAttackPosture(this);
             }
 
-            Math_ApproachF(&this->actor.speedXZ, ZOP_AGGRO(10.0f / 3.0f, 6.5f), 0.5f, 2.0f);
+            Math_ApproachF(&this->actor.speedXZ, BOSSGOMA_P2_SPEED(ZOP_AGGRO(10.0f / 3.0f, 6.5f)), 0.5f, 2.0f);
             Math_ApproachS(&this->actor.world.rot.y, rot, 5, 0x3E8);
         } else {
             if (this->timer != 0) {
                 // move away from the player, walking backwards
-                Math_ApproachF(&this->actor.speedXZ, -10.0f, 0.5f, 2.0f);
-                this->skelanime.playSpeed = -3.0f;
+                Math_ApproachF(&this->actor.speedXZ, BOSSGOMA_P2_SPEED(-10.0f), 0.5f, 2.0f);
+                this->skelanime.playSpeed = BOSSGOMA_P2_SPEED(-3.0f);
                 if (this->timer == 1) {
                     this->actor.speedXZ = 0.0f;
                 }
             } else {
                 // move away from the player, walking forwards
-                Math_ApproachF(&this->actor.speedXZ, 20.0f / 3.0f, 0.5f, 2.0f);
-                this->skelanime.playSpeed = 2.0f;
+                Math_ApproachF(&this->actor.speedXZ, BOSSGOMA_P2_SPEED(20.0f / 3.0f), 0.5f, 2.0f);
+                this->skelanime.playSpeed = BOSSGOMA_P2_SPEED(2.0f);
                 rot += 0x8000;
             }
 
@@ -1785,7 +1795,7 @@ void BossGoma_WallClimb(BossGoma* this, PlayState* play) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_CLIM);
     }
 
-    Math_ApproachF(&this->actor.velocity.y, 5.0f, 0.5f, 2.0f);
+    Math_ApproachF(&this->actor.velocity.y, BOSSGOMA_P2_SPEED(5.0f), 0.5f, 2.0f);
     Math_ApproachS(&this->actor.shape.rot.x, -0x4000, 2, 0x7D0);
     Math_ApproachS(&this->actor.world.rot.y, this->actor.wallYaw + 0x8000, 2, 0x5DC);
 
@@ -2096,7 +2106,7 @@ s32 BossGoma_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f
     OPEN_DISPS(play->state.gfxCtx);
 
     gDPPipeSync(POLY_OPA_DISP++);
-    if (BossGoma_InPhase2(this) && this->visualState != VISUALSTATE_DEFEATED) {
+    if (sZopPhase2Announced && this->visualState != VISUALSTATE_DEFEATED) {
         // Phase 2: the glowing accents shift from green/cyan toward red
         gDPSetEnvColor(POLY_OPA_DISP++, (s16)(this->mainEnvColor[0] * 0.3f + 178.0f),
                        (s16)(this->mainEnvColor[1] * 0.35f), (s16)(this->mainEnvColor[2] * 0.25f), 255);
@@ -2309,20 +2319,25 @@ void BossGoma_Draw(Actor* thisx, PlayState* play) {
         gSPSegment(POLY_OPA_DISP++, 0x08, BossGoma_EmptyDlist(play->state.gfxCtx));
     }
 
-    // Phase 2: a slight, slowly pulsing red tint over the whole body (same fog trick as the damage color filter)
-    s32 phase2Tint = BossGoma_InPhase2(this) && this->visualState != VISUALSTATE_DEFEATED;
-    if (phase2Tint) {
-        gDPPipeSync(POLY_OPA_DISP++);
-        gDPSetFogColor(POLY_OPA_DISP++, 210, 25, 15, 255);
-        gSPFogPosition(POLY_OPA_DISP++, 0, (s16)(3600.0f + 250.0f * Math_SinS(this->frameCount * 0x500)));
+    // Phase 2: red skin and shell, faded in during the phase 2 cutscene
+    {
+        f32 recolor = 0.0f;
+
+        if (sZopPhase2Announced) {
+            recolor = (this->actionFunc == BossGoma_Phase2Roar)
+                          ? 1.0f - (f32)this->framesUntilNextAction / BOSSGOMA_PHASE2_ROAR_FRAMES
+                          : 1.0f;
+        }
+        if (ZOP_GohmaSetRecolor(recolor) || sZopRecolorDirty) {
+            sZopRecolorDirty = false;
+            gSPInvalidateTexCache(POLY_OPA_DISP++, (uintptr_t)gGohmaBodyTex);
+            gSPInvalidateTexCache(POLY_OPA_DISP++, (uintptr_t)gGohmaShellUndersideTex);
+            gSPInvalidateTexCache(POLY_OPA_DISP++, (uintptr_t)gGohmaDarkShellTex);
+            gSPInvalidateTexCache(POLY_OPA_DISP++, (uintptr_t)gGohmaShellTex);
+        }
     }
 
     SkelAnime_DrawSkeletonOpa(play, &this->skelanime, BossGoma_OverrideLimbDraw, BossGoma_PostLimbDraw, this);
-
-    if (phase2Tint) {
-        gDPPipeSync(POLY_OPA_DISP++);
-        POLY_OPA_DISP = Play_SetFog(play, POLY_OPA_DISP);
-    }
 
     CLOSE_DISPS(play->state.gfxCtx);
 }

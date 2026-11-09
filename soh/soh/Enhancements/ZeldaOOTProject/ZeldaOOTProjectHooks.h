@@ -31,6 +31,10 @@ int ZOP_BossPhase2(void* boss, int baseHealth);
 void ZOP_SpawnPearlVolley(struct PlayState* play, void* shooter, int count);
 int ZOP_IsPearlArrow(short actorId);
 
+// Gohma phase 2: blends her skin/shell textures toward a red set (0 = original, 1 = fully red). Returns nonzero when
+// texture data changed, so the caller must invalidate the texture cache for them (GohmaRecolor.cpp)
+int ZOP_GohmaSetRecolor(float amount);
+
 #ifdef __cplusplus
 }
 #endif
