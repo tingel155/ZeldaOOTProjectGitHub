@@ -196,15 +196,17 @@ Vtx* BuildVertices(PlayState* play, V3 worldPos, s16 yaw, float scaleXZ, float s
             float fresnel = 1.0f - ndv;
 
             float hue = ndv * 2.2f + time * 0.015f + local.y * 0.006f + faceShift;
-            V3 color = Lerp(pearlBase, PearlPalette(hue), 0.55f + 0.4f * fresnel) * facetLight;
+            V3 color = Lerp(pearlBase, PearlPalette(hue), 0.85f + 0.15f * fresnel) * facetLight;
 
             float spec = powf(Clamp01(Dot(n, Normalize(view + light))), 24.0f);
             float heightNorm = (local.y - kBottomY) / (kTopY - kBottomY);
             float band = expf(-((heightNorm - sweep) * (heightNorm - sweep)) / 0.006f) * (0.4f + 0.6f * fresnel);
-            float edge = isEdge ? 0.35f : 0.0f;
+            float edge = isEdge ? 0.2f : 0.0f;
             color = Lerp(color, white, Clamp01(spec * 0.9f + band * 0.7f + edge * 0.6f));
 
-            float alpha = (isEdge ? 0.42f : 0.06f) + 0.5f * powf(fresnel, 1.5f) + 0.45f * spec + 0.35f * band;
+            // High contrast: facet centers are almost clear glass, the pearl sheen concentrates on the edges
+            float alpha = isEdge ? (0.55f + 0.45f * powf(fresnel, 1.5f)) : (0.18f * fresnel * fresnel);
+            alpha += 0.45f * spec + 0.3f * band;
 
             Vtx_t& out = vtx[v++].v;
             out.ob[0] = (s16)(local.x * kVtxScale);
@@ -330,7 +332,9 @@ extern "C" void NayrusCrystal_Draw(Actor* thisx, PlayState* play) {
     const float scaleXZ = thisx->scale.x / (0.6f * 1.3f);
     const float scaleY = thisx->scale.y / 0.6f;
     const float fade = magic->primAlpha / 255.0f;
-    const V3 pos = { thisx->world.pos.x, thisx->world.pos.y, thisx->world.pos.z };
+    // Lowered so Link sits in the vertical middle of the gem (the lower tip sinks into the ground)
+    const float yOffset = CVarGetFloat(CVAR_ZOP_NAYRU("CrystalYOffset"), -30.0f) * scaleY;
+    const V3 pos = { thisx->world.pos.x, thisx->world.pos.y + yOffset, thisx->world.pos.z };
     // Slow independent spin; vanilla's shape.rot.y is tied to the camera which looks wrong on a gem
     const s16 yaw = (s16)(play->gameplayFrames * 0x90);
 
@@ -343,14 +347,14 @@ extern "C" void NayrusCrystal_Draw(Actor* thisx, PlayState* play) {
     // 1. Inner core: a small warm copy of the gem glowing from inside
     LoadGemMatrix(play, dl, pos, -yaw * 2, scaleXZ * 0.38f, scaleY * 0.42f);
     gSPSetGeometryMode(dl++, G_CULL_BACK);
-    gDPSetPrimColor(dl++, 0, 0, 255, 215, 240, (u8)(200 * fade));
+    gDPSetPrimColor(dl++, 0, 0, 255, 215, 240, (u8)(150 * fade));
     DrawGemTriangles(dl, vtx);
 
     // 2. Back facets, seen through the front: dimmer and slightly tinted
     LoadGemMatrix(play, dl, pos, yaw, scaleXZ, scaleY);
     gSPClearGeometryMode(dl++, G_CULL_BOTH);
     gSPSetGeometryMode(dl++, G_CULL_FRONT);
-    gDPSetPrimColor(dl++, 0, 0, 225, 230, 255, (u8)(150 * fade));
+    gDPSetPrimColor(dl++, 0, 0, 225, 230, 255, (u8)(90 * fade));
     DrawGemTriangles(dl, vtx);
 
     // 3. Front facets
