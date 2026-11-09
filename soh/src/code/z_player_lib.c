@@ -10,6 +10,7 @@
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/Enhancements/randomizer/draw.h"
 #include "soh/ResourceManagerHelpers.h"
+#include "soh/Enhancements/ZeldaOOTProject/ZeldaOOTProjectHooks.h"
 
 #include <stdlib.h>
 #include <libultraship/bridge/consolevariablebridge.h>
@@ -1798,6 +1799,7 @@ void Player_PostLimbDrawGameplay(PlayState* play, s32 limbIndex, Gfx** dList, Ve
         Actor* hookedActor;
 
         Math_Vec3f_Copy(&this->leftHandPos, D_80160000);
+        ZOP_OnPlayerLeftHandDraw(play, this);
 
         if (this->itemAction == PLAYER_IA_DEKU_STICK) {
             Vec3f sp124[3];
