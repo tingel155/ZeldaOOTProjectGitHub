@@ -6,6 +6,7 @@
 //   gZOP.Difficulty.HealthMult   enemy health (default 2)
 //   gZOP.Difficulty.Aggressive   aggressive AI tuning, see ZOP_AGGRO in the enemies' source (default 1)
 //   gZOP.Difficulty.StunMult     how long a stunned boss stays down, see ZOP_STUN (default 1.5)
+//   gZOP.Difficulty.BossPhase2   bosses get a second phase after losing 70% of their health (default 1)
 
 #include <libultraship/bridge/consolevariablebridge.h>
 
@@ -32,7 +33,7 @@ static bool IsAffectedEnemy(s16 actorId) {
         case ACTOR_EN_GOMA: // Gohma Larvae and their eggs
             return true;
         default:
-            return false;
+            return ZOP_IsPearlArrow(actorId); // Gohma's phase 2 projectiles
     }
 }
 
@@ -56,6 +57,20 @@ extern "C" int ZOP_EnemyAggressive(void) {
     return CVAR_DIFFICULTY_VALUE && CVarGetInteger(CVAR_ZOP_DIFFICULTY("Aggressive"), 1);
 }
 
+extern "C" int ZOP_DifficultyEnabled(void) {
+    return CVAR_DIFFICULTY_VALUE;
+}
+
+extern "C" int ZOP_BossPhase2(void* bossRef, int baseHealth) {
+    Actor* boss = (Actor*)bossRef;
+    if (!CVAR_DIFFICULTY_VALUE || !CVarGetInteger(CVAR_ZOP_DIFFICULTY("BossPhase2"), 1)) {
+        return false;
+    }
+    float startHealth = baseHealth * CVarGetFloat(CVAR_ZOP_DIFFICULTY("HealthMult"), 2.0f);
+    s8 health = (s8)boss->colChkInfo.health;
+    return health > 0 && health <= startHealth * 0.3f;
+}
+
 extern "C" float ZOP_EnemyStunMult(void) {
     return CVAR_DIFFICULTY_VALUE ? CVarGetFloat(CVAR_ZOP_DIFFICULTY("StunMult"), 1.5f) : 1.0f;
 }
@@ -65,6 +80,10 @@ static void RegisterDifficulty() {
         Actor* actor = (Actor*)actorRef;
         if (IsAffectedEnemy(actor->id)) {
             ScaleEnemyHealth(actor);
+        }
+        // Testing aid: bosses start with just enough health to already be in their second phase
+        if (actor->category == ACTORCAT_BOSS && CVarGetInteger(CVAR_ZOP_DIFFICULTY("TestStartInPhase2"), 0)) {
+            actor->colChkInfo.health = (u8)std::max(1, (int)(actor->colChkInfo.health * 0.3f));
         }
     });
 }

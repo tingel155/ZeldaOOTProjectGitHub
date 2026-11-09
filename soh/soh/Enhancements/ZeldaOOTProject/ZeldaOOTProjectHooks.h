@@ -20,12 +20,26 @@ int ZOP_EnemyAggressive(void);
 // Enemy AI code: factor for how long a stunned boss stays down (Difficulty.cpp)
 float ZOP_EnemyStunMult(void);
 
+// Nonzero when the difficulty options are on (Difficulty.cpp)
+int ZOP_DifficultyEnabled(void);
+
+// Boss AI code: nonzero once the boss (an Actor*) is in its second phase, i.e. has lost 70% of the health it started
+// with. baseHealth is the boss's vanilla health (Difficulty.cpp)
+int ZOP_BossPhase2(void* boss, int baseHealth);
+
+// Gohma phase 2: fires a volley of homing pearl arrows from the shooter's (an Actor*) focus point (GohmaPearlArrows.cpp)
+void ZOP_SpawnPearlVolley(struct PlayState* play, void* shooter, int count);
+int ZOP_IsPearlArrow(short actorId);
+
 #ifdef __cplusplus
 }
 #endif
 
 // Picks the aggressive value when the difficulty option is on, the vanilla one otherwise
 #define ZOP_AGGRO(vanilla, aggressive) (ZOP_EnemyAggressive() ? (aggressive) : (vanilla))
+
+// Picks the hard value when the difficulty options are on, the vanilla one otherwise
+#define ZOP_HARD(vanilla, hard) (ZOP_DifficultyEnabled() ? (hard) : (vanilla))
 
 // Scales a stun duration in frames
 #define ZOP_STUN(frames) ((s16)((frames) * ZOP_EnemyStunMult()))

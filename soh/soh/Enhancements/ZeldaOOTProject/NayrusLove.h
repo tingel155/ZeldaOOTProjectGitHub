@@ -10,6 +10,8 @@
 
 #define CVAR_ZOP_NAYRU(var) "gZOP.NayrusLove." var
 
+struct PlayState;
+
 namespace NayrusLove {
 
 // Visual state of the crystal, driven by NayrusShatter.cpp and read by the crystal draw
@@ -84,5 +86,11 @@ inline u32 Hash(u32 x) {
 inline u8 ToU8(float f) {
     return (u8)(Clamp01(f) * 255.0f);
 }
+
+// Pearl shard mesh shared by the Nayru's Love burst and Gohma's pearl arrows (NayrusShatter.cpp).
+// Set the material once, then draw any number of shards into the same XLU display list.
+void SetupPearlShardMaterial(Gfx*& dl);
+void DrawPearlShard(::PlayState* play, Gfx*& dl, V3 pos, V3 dir, s16 roll, float length, float width, float hue,
+                    float scale, float time);
 
 } // namespace NayrusLove

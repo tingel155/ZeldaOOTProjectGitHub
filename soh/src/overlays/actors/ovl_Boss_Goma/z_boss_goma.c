@@ -56,6 +56,15 @@ void BossGoma_WallClimb(BossGoma* this, PlayState* play);
 void BossGoma_CeilingMoveToCenter(BossGoma* this, PlayState* play);
 void BossGoma_SpawnChildGohma(BossGoma* this, PlayState* play, s16 i);
 
+// ZeldaOOTProject: second phase once Gohma has lost 70% of her health. She retreats to the ceiling more often and,
+// instead of laying eggs, broods there and fires volleys of homing pearl arrows.
+#define BOSSGOMA_PHASE2_VOLLEY_FRAMES 110
+static u8 sZopPhase2Announced;
+
+static s32 BossGoma_InPhase2(BossGoma* this) {
+    return ZOP_BossPhase2(&this->actor, 10);
+}
+
 const ActorInit Boss_Goma_InitVars = {
     ACTOR_BOSS_GOMA,
     ACTORCAT_BOSS,
@@ -339,6 +348,7 @@ void BossGoma_Init(Actor* thisx, PlayState* play) {
     BossGoma_SetupEncounter(this, play);
     this->actor.colChkInfo.health = 10;
     this->actor.colChkInfo.mass = MASS_IMMOVABLE;
+    sZopPhase2Announced = false;
     Collider_InitJntSph(play, &this->collider);
     Collider_SetJntSph(play, &this->collider, &this->actor, &sColliderJntSphInit, this->colliderItems);
 
@@ -486,7 +496,7 @@ void BossGoma_SetupCeilingPrepareSpawnGohmas(BossGoma* this) {
     Animation_Change(&this->skelanime, &gGohmaPrepareEggsAnim, 1.0f, 0.0f,
                      Animation_GetLastFrame(&gGohmaPrepareEggsAnim), ANIMMODE_LOOP, -10.0f);
     this->actionFunc = BossGoma_CeilingPrepareSpawnGohmas;
-    this->framesUntilNextAction = ZOP_AGGRO(70, 40);
+    this->framesUntilNextAction = BossGoma_InPhase2(this) ? BOSSGOMA_PHASE2_VOLLEY_FRAMES : ZOP_AGGRO(70, 40);
 }
 
 void BossGoma_SetupWallClimb(BossGoma* this) {
@@ -1387,7 +1397,7 @@ void BossGoma_FloorLandStruckDown(BossGoma* this, PlayState* play) {
         BossGoma_SetupFloorStunned(this);
         this->sfxFaintTimer = 92;
         this->patienceTimer = 0;
-        this->framesUntilNextAction = ZOP_STUN(150);
+        this->framesUntilNextAction = ZOP_HARD(150, 100);
     }
 
     Actor_SpawnFloorDustRing(play, &this->actor, &this->actor.world.pos, 55.0f, 4, 8.0f, 500, 10, true);
@@ -1530,6 +1540,22 @@ void BossGoma_CeilingSpawnGohmas(BossGoma* this, PlayState* play) {
 void BossGoma_CeilingPrepareSpawnGohmas(BossGoma* this, PlayState* play) {
     SkelAnime_Update(&this->skelanime);
 
+    if (BossGoma_InPhase2(this)) {
+        // Brooding pose, but three volleys of pearl arrows instead of eggs; then drop back to the floor.
+        // Still vulnerable: an eye hit knocks her down like in vanilla.
+        if (this->framesUntilNextAction == 90 || this->framesUntilNextAction == 62 ||
+            this->framesUntilNextAction == 34) {
+            ZOP_SpawnPearlVolley(play, &this->actor, 5);
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_CRY1);
+        }
+        if (this->framesUntilNextAction == 0) {
+            BossGoma_SetupFallJump(this);
+        }
+        this->eyeState = EYESTATE_IRIS_NO_FOLLOW_NO_IFRAMES;
+        this->visualState = VISUALSTATE_RED;
+        return;
+    }
+
     if (this->framesUntilNextAction == 0) {
         BossGoma_SetupCeilingSpawnGohmas(this);
     }
@@ -1610,6 +1636,11 @@ void BossGoma_FloorMain(BossGoma* this, PlayState* play) {
         this->doNotMoveThisFrame = true;
     } else if (Animation_OnFrame(&this->skelanime, 16.0f)) {
         this->doNotMoveThisFrame = true;
+    }
+
+    // Phase 2: loses patience sooner, so she retreats and climbs to the ceiling more often
+    if (BossGoma_InPhase2(this) && this->patienceTimer > 120) {
+        this->patienceTimer = 120;
     }
 
     if (Animation_OnFrame(&this->skelanime, 15.0f)) {
@@ -1845,6 +1876,13 @@ void BossGoma_UpdateHit(BossGoma* this, PlayState* play) {
                     Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_DAM1);
                     BossGoma_SetupFloorDamaged(this);
                     EffectSsSibuki_SpawnBurst(play, &this->actor.focus.pos);
+
+                    if (!sZopPhase2Announced && BossGoma_InPhase2(this)) {
+                        // Entering phase 2: angry roar and a rumble
+                        sZopPhase2Announced = true;
+                        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_CRY1);
+                        Actor_RequestQuakeAndRumble(&this->actor, play, 10, 30);
+                    }
                 } else {
                     BossGoma_SetupDefeated(this, play);
                     Enemy_StartFinishingBlow(play, &this->actor);
@@ -1863,7 +1901,7 @@ void BossGoma_UpdateHit(BossGoma* this, PlayState* play) {
                 if (acHitInfo->toucher.dmgFlags & 1) {
                     this->framesUntilNextAction = ZOP_STUN(40);
                 } else {
-                    this->framesUntilNextAction = ZOP_STUN(90);
+                    this->framesUntilNextAction = ZOP_HARD(90, 100);
                 }
 
                 this->timer = 4;

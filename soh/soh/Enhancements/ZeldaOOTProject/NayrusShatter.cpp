@@ -367,60 +367,12 @@ void NayruShards_Update(Actor* thisx, PlayState* play) {
     }
 }
 
-// Elongated 4-sided bipyramid along +Z: long tip forward, short tip back
-constexpr int kShardTris = 8;
-
-void DrawShard(PlayState* play, Gfx*& dl, const Shard& shard, int index, float time) {
+void DrawShard(PlayState* play, Gfx*& dl, const Shard& shard, float time) {
     float fadeScale = 1.0f;
     if (shard.state == SHARD_STUCK && shard.timer > kShardStuckFrames) {
         fadeScale = 1.0f - (float)(shard.timer - kShardStuckFrames) / (float)kShardFadeFrames;
     }
-    const float len = shard.length;
-    const float w = shard.width;
-    const V3 tipFront = { 0.0f, 0.0f, len * 0.5f };
-    const V3 tipBack = { 0.0f, 0.0f, -len * 0.35f };
-    const V3 ring[4] = { { w, 0.0f, len * 0.05f }, { 0.0f, w * 0.6f, len * 0.05f }, { -w, 0.0f, len * 0.05f },
-                         { 0.0f, -w * 0.6f, len * 0.05f } };
-
-    Vtx* vtx = (Vtx*)Graph_Alloc(play->state.gfxCtx, kShardTris * 3 * sizeof(Vtx));
-    int v = 0;
-    auto emit = [&](const V3& p, int face, bool isTip) {
-        V3 c = PearlPalette(shard.hue + face * 0.13f + time * 0.02f);
-        c = Lerp(c, { 1.0f, 1.0f, 1.0f }, isTip ? 0.55f : 0.15f);
-        Vtx_t& out = vtx[v++].v;
-        out.ob[0] = (s16)(p.x * kShardVtxScale);
-        out.ob[1] = (s16)(p.y * kShardVtxScale);
-        out.ob[2] = (s16)(p.z * kShardVtxScale);
-        out.flag = 0;
-        out.tc[0] = out.tc[1] = 0;
-        out.cn[0] = ToU8(c.x);
-        out.cn[1] = ToU8(c.y);
-        out.cn[2] = ToU8(c.z);
-        out.cn[3] = ToU8(isTip ? 0.95f : 0.7f);
-    };
-    for (int k = 0; k < 4; k++) {
-        emit(tipFront, k, true);
-        emit(ring[k], k, false);
-        emit(ring[(k + 1) % 4], k, false);
-        emit(tipBack, k + 4, true);
-        emit(ring[(k + 1) % 4], k + 4, false);
-        emit(ring[k], k + 4, false);
-    }
-
-    // Align local +Z with the flight direction
-    float yaw = atan2f(shard.dir.x, shard.dir.z);
-    float pitch = -asinf(shard.dir.y < -1.0f ? -1.0f : (shard.dir.y > 1.0f ? 1.0f : shard.dir.y));
-    Matrix_Translate(shard.pos.x, shard.pos.y, shard.pos.z, MTXMODE_NEW);
-    Matrix_RotateY(yaw, MTXMODE_APPLY);
-    Matrix_RotateX(pitch, MTXMODE_APPLY);
-    Matrix_RotateZ(shard.roll * (kPi / 0x8000), MTXMODE_APPLY);
-    float s = fadeScale / kShardVtxScale;
-    Matrix_Scale(s, s, s, MTXMODE_APPLY);
-    gSPMatrix(dl++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-    gSPVertex(dl++, (uintptr_t)vtx, kShardTris * 3, 0);
-    for (int t = 0; t < kShardTris; t += 2) {
-        gSP2Triangles(dl++, t * 3, t * 3 + 1, t * 3 + 2, 0, t * 3 + 3, t * 3 + 4, t * 3 + 5, 0);
-    }
+    DrawPearlShard(play, dl, shard.pos, shard.dir, shard.roll, shard.length, shard.width, shard.hue, fadeScale, time);
 }
 
 } // namespace
@@ -447,6 +399,70 @@ extern "C" void NayruShards_Draw(Actor* thisx, PlayState* play) {
     }
 
     Gfx* dl = POLY_XLU_DISP;
+    SetupPearlShardMaterial(dl);
+    for (int i = 0; i < kShardCount; i++) {
+        if (self->shards[i].state != SHARD_GONE) {
+            DrawShard(play, dl, self->shards[i], time);
+        }
+    }
+    POLY_XLU_DISP = dl;
+
+    CLOSE_DISPS(play->state.gfxCtx);
+}
+
+// Elongated 4-sided bipyramid along +Z (long tip forward, short tip back), shaded in the pearl palette
+void NayrusLove::DrawPearlShard(PlayState* play, Gfx*& dl, V3 pos, V3 dir, s16 roll, float length, float width,
+                                float hue, float scale, float time) {
+    constexpr int kTris = 8;
+    const V3 tipFront = { 0.0f, 0.0f, length * 0.5f };
+    const V3 tipBack = { 0.0f, 0.0f, -length * 0.35f };
+    const V3 ring[4] = { { width, 0.0f, length * 0.05f },
+                         { 0.0f, width * 0.6f, length * 0.05f },
+                         { -width, 0.0f, length * 0.05f },
+                         { 0.0f, -width * 0.6f, length * 0.05f } };
+
+    Vtx* vtx = (Vtx*)Graph_Alloc(play->state.gfxCtx, kTris * 3 * sizeof(Vtx));
+    int v = 0;
+    auto emit = [&](const V3& p, int face, bool isTip) {
+        V3 c = PearlPalette(hue + face * 0.13f + time * 0.02f);
+        c = Lerp(c, { 1.0f, 1.0f, 1.0f }, isTip ? 0.55f : 0.15f);
+        Vtx_t& out = vtx[v++].v;
+        out.ob[0] = (s16)(p.x * kShardVtxScale);
+        out.ob[1] = (s16)(p.y * kShardVtxScale);
+        out.ob[2] = (s16)(p.z * kShardVtxScale);
+        out.flag = 0;
+        out.tc[0] = out.tc[1] = 0;
+        out.cn[0] = ToU8(c.x);
+        out.cn[1] = ToU8(c.y);
+        out.cn[2] = ToU8(c.z);
+        out.cn[3] = ToU8(isTip ? 0.95f : 0.7f);
+    };
+    for (int k = 0; k < 4; k++) {
+        emit(tipFront, k, true);
+        emit(ring[k], k, false);
+        emit(ring[(k + 1) % 4], k, false);
+        emit(tipBack, k + 4, true);
+        emit(ring[(k + 1) % 4], k + 4, false);
+        emit(ring[k], k + 4, false);
+    }
+
+    // Align local +Z with the flight direction
+    float yaw = atan2f(dir.x, dir.z);
+    float pitch = -asinf(dir.y < -1.0f ? -1.0f : (dir.y > 1.0f ? 1.0f : dir.y));
+    Matrix_Translate(pos.x, pos.y, pos.z, MTXMODE_NEW);
+    Matrix_RotateY(yaw, MTXMODE_APPLY);
+    Matrix_RotateX(pitch, MTXMODE_APPLY);
+    Matrix_RotateZ(roll * (kPi / 0x8000), MTXMODE_APPLY);
+    float s = scale / kShardVtxScale;
+    Matrix_Scale(s, s, s, MTXMODE_APPLY);
+    gSPMatrix(dl++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPVertex(dl++, (uintptr_t)vtx, kTris * 3, 0);
+    for (int t = 0; t < kTris; t += 2) {
+        gSP2Triangles(dl++, t * 3, t * 3 + 1, t * 3 + 2, 0, t * 3 + 3, t * 3 + 4, t * 3 + 5, 0);
+    }
+}
+
+void NayrusLove::SetupPearlShardMaterial(Gfx*& dl) {
     gDPPipeSync(dl++);
     gDPSetCycleType(dl++, G_CYC_1CYCLE);
     gDPSetRenderMode(dl++, G_RM_ZB_XLU_SURF, G_RM_ZB_XLU_SURF2);
@@ -454,14 +470,6 @@ extern "C" void NayruShards_Draw(Actor* thisx, PlayState* play) {
     gSPTexture(dl++, 0, 0, 0, G_TX_RENDERTILE, G_OFF);
     gSPClearGeometryMode(dl++, G_LIGHTING | G_TEXTURE_GEN | G_TEXTURE_GEN_LINEAR | G_FOG | G_CULL_BOTH);
     gSPSetGeometryMode(dl++, G_SHADE | G_SHADING_SMOOTH | G_ZBUFFER);
-    for (int i = 0; i < kShardCount; i++) {
-        if (self->shards[i].state != SHARD_GONE) {
-            DrawShard(play, dl, self->shards[i], i, time);
-        }
-    }
-    POLY_XLU_DISP = dl;
-
-    CLOSE_DISPS(play->state.gfxCtx);
 }
 
 float NayrusLove::GetCrystalYOffset(float scaleY) {
