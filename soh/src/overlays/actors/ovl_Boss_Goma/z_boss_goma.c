@@ -72,10 +72,54 @@ static s32 BossGoma_InPhase2(BossGoma* this) {
 #define BOSSGOMA_P2_SPEED(x) ((x) * (BossGoma_InPhase2(this) ? 1.2f : 1.0f))
 
 static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play);
+static void BossGoma_Phase2Slam(BossGoma* this, PlayState* play);
+static void BossGoma_SetupPhase2Roar(BossGoma* this, PlayState* play);
+void BossGoma_PlayEffectsAndSfx(BossGoma* this, PlayState* play, s16 arg2, s16 amountMinus1);
 void BossGoma_SetupFloorMain(BossGoma* this);
 
 /**
- * Phase 2 intro: a short cutscene. The music stops, Gohma rears up and screams while the camera circles her,
+ * Phase 2 intro, part 1: Gohma rears up and slams the floor. The shockwave throws Link back without hurting him,
+ * which opens up some distance before the cutscene.
+ */
+static void BossGoma_SetupPhase2Slam(BossGoma* this) {
+    Animation_Change(&this->skelanime, &gGohmaAttackAnim, 1.0f, 0.0f, Animation_GetLastFrame(&gGohmaAttackAnim),
+                     ANIMMODE_ONCE, -5.0f);
+    this->actionFunc = BossGoma_Phase2Slam;
+    this->actionState = 0;
+    this->disableGameplayLogic = true; // no hits and no damaging contact meanwhile
+    this->actor.speedXZ = 0.0f;
+}
+
+static void BossGoma_Phase2Slam(BossGoma* this, PlayState* play) {
+    SkelAnime_Update(&this->skelanime);
+    Math_ApproachS(&this->actor.shape.rot.x, 0, 2, 0xBB8);
+    Math_ApproachS(&this->actor.world.rot.y, this->actor.yawTowardsPlayer, 3, 0x7D0);
+    this->visualState = VISUALSTATE_RED;
+
+    switch (this->actionState) {
+        case 0:
+            if (Animation_OnFrame(&this->skelanime, 10.0f)) {
+                // Impact: harder than her normal lunge
+                BossGoma_PlayEffectsAndSfx(this, play, 3, 8);
+                Actor_RequestQuakeAndRumble(&this->actor, play, 14, 22);
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_CRY1);
+                Actor_SpawnFloorDustRing(play, &this->actor, &this->actor.world.pos, 120.0f, 12, 10.0f, 800, 14, true);
+                Actor_SetPlayerKnockbackLargeNoDamage(play, &this->actor, 18.0f, this->actor.yawTowardsPlayer, 9.0f);
+                this->actionState = 1;
+                this->framesUntilNextAction = 30; // Link lands and gets back up
+            }
+            break;
+
+        case 1:
+            if (this->framesUntilNextAction == 0) {
+                BossGoma_SetupPhase2Roar(this, play);
+            }
+            break;
+    }
+}
+
+/**
+ * Phase 2 intro, part 2: a short cutscene. The music stops, Gohma rears up and screams while the camera circles her,
  * then the boss music starts again and she heads for the ceiling.
  */
 static void BossGoma_SetupPhase2Roar(BossGoma* this, PlayState* play) {
@@ -1973,7 +2017,7 @@ void BossGoma_UpdateHit(BossGoma* this, PlayState* play) {
 
                     if (!sZopPhase2Announced && BossGoma_InPhase2(this)) {
                         sZopPhase2Announced = true;
-                        BossGoma_SetupPhase2Roar(this, play);
+                        BossGoma_SetupPhase2Slam(this);
                     } else {
                         BossGoma_SetupFloorDamaged(this);
                     }
@@ -2323,7 +2367,7 @@ void BossGoma_Draw(Actor* thisx, PlayState* play) {
     {
         f32 recolor = 0.0f;
 
-        if (sZopPhase2Announced) {
+        if (sZopPhase2Announced && this->actionFunc != BossGoma_Phase2Slam) {
             recolor = (this->actionFunc == BossGoma_Phase2Roar)
                           ? 1.0f - (f32)this->framesUntilNextAction / BOSSGOMA_PHASE2_ROAR_FRAMES
                           : 1.0f;
