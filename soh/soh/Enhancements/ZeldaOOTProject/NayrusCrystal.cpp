@@ -8,10 +8,10 @@
 
 #include <array>
 #include <utility>
-#include <cmath>
 
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/ShipInit.hpp"
+#include "NayrusLove.h"
 
 extern "C" {
 #include <z64.h>
@@ -23,43 +23,12 @@ extern "C" {
 void MagicDark_DiamondDraw(Actor* thisx, PlayState* play);
 }
 
-#define CVAR_ZOP_NAYRU(var) "gZOP.NayrusLove." var
 #define CVAR_PEARL_CRYSTAL_NAME CVAR_ZOP_NAYRU("PearlCrystal")
 #define CVAR_PEARL_CRYSTAL_VALUE CVarGetInteger(CVAR_PEARL_CRYSTAL_NAME, 1)
 
 namespace {
 
-constexpr float kPi = 3.14159265f;
-
-struct V3 {
-    float x, y, z;
-};
-
-V3 operator+(V3 a, V3 b) {
-    return { a.x + b.x, a.y + b.y, a.z + b.z };
-}
-V3 operator-(V3 a, V3 b) {
-    return { a.x - b.x, a.y - b.y, a.z - b.z };
-}
-V3 operator*(V3 a, float s) {
-    return { a.x * s, a.y * s, a.z * s };
-}
-float Dot(V3 a, V3 b) {
-    return a.x * b.x + a.y * b.y + a.z * b.z;
-}
-V3 Cross(V3 a, V3 b) {
-    return { a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x };
-}
-V3 Normalize(V3 a) {
-    float len = sqrtf(Dot(a, a));
-    return (len > 0.0001f) ? a * (1.0f / len) : V3{ 0.0f, 1.0f, 0.0f };
-}
-float Clamp01(float f) {
-    return (f < 0.0f) ? 0.0f : ((f > 1.0f) ? 1.0f : f);
-}
-V3 Lerp(V3 a, V3 b, float t) {
-    return a + (b - a) * t;
-}
+using namespace NayrusLove;
 
 // Gem shape in world units for adult Link, origin at Link's waist. Eight sides: a pointed crown, a girdle band and a
 // pointed pavilion. Rings marked "offset" are rotated by half a side, which turns the crown/pavilion into kite facets.
@@ -134,34 +103,7 @@ const std::array<Tri, kTriCount>& Gem() {
     return sGem;
 }
 
-// Mother-of-pearl palette, cycled by view angle and time
-constexpr std::array<V3, 5> kPearlPalette = { {
-    { 1.00f, 0.52f, 0.80f }, // rose
-    { 0.42f, 1.00f, 0.88f }, // aqua
-    { 1.00f, 0.86f, 0.42f }, // gold
-    { 0.68f, 0.52f, 1.00f }, // lavender
-    { 0.45f, 0.78f, 1.00f }, // sky blue
-} };
-
-V3 PearlPalette(float t) {
-    t -= floorf(t);
-    float f = t * (float)kPearlPalette.size();
-    int i = (int)f;
-    float k = f - i;
-    k = k * k * (3.0f - 2.0f * k);
-    return Lerp(kPearlPalette[i % kPearlPalette.size()], kPearlPalette[(i + 1) % kPearlPalette.size()], k);
-}
-
-u32 Hash(u32 x) {
-    x ^= x >> 16;
-    x *= 0x7FEB352D;
-    x ^= x >> 15;
-    x *= 0x846CA68B;
-    x ^= x >> 16;
-    return x;
-}
-
-Vtx* BuildVertices(PlayState* play, V3 worldPos, s16 yaw, float scaleXZ, float scaleY) {
+Vtx* BuildVertices(PlayState* play, V3 worldPos, s16 yaw, float scaleXZ, float scaleY, const CrystalFx& fx) {
     Vtx* vtx = (Vtx*)Graph_Alloc(play->state.gfxCtx, kVtxCount * sizeof(Vtx));
     const float time = (float)(play->gameplayFrames % 100000);
     const float sinYaw = sinf(yaw * (kPi / 0x8000));
@@ -188,6 +130,8 @@ Vtx* BuildVertices(PlayState* play, V3 worldPos, s16 yaw, float scaleXZ, float s
         float faceShift = (float)(Hash(face++) & 0xFF) / 255.0f * 0.6f;
         // Soft directional shading keeps the facets distinguishable
         float facetLight = 0.78f + 0.3f * Dot(n, light);
+        // Hits fracture a growing share of the facets: they turn milky white, like cracked glass
+        bool cracked = (float)(Hash(face * 7 + 3) % 1000) / 1000.0f < fx.damage * 0.75f;
 
         auto emit = [&](const V3& local, bool isEdge) {
             V3 p = toWorld(local);
@@ -203,10 +147,14 @@ Vtx* BuildVertices(PlayState* play, V3 worldPos, s16 yaw, float scaleXZ, float s
             float band = expf(-((heightNorm - sweep) * (heightNorm - sweep)) / 0.006f) * (0.4f + 0.6f * fresnel);
             float edge = isEdge ? 0.2f : 0.0f;
             color = Lerp(color, white, Clamp01(spec * 0.9f + band * 0.7f + edge * 0.6f));
+            // Cracks, the flash of a blocked hit and the wind-up before bursting all push toward white
+            float whiten = (cracked ? 0.45f : 0.0f) + fx.hitFlash * 0.6f + fx.charge * 0.75f;
+            color = Lerp(color, white, Clamp01(whiten));
 
             // High contrast: facet centers are almost clear glass, the pearl sheen concentrates on the edges
             float alpha = isEdge ? (0.55f + 0.45f * powf(fresnel, 1.5f)) : (0.18f * fresnel * fresnel);
             alpha += 0.45f * spec + 0.3f * band;
+            alpha += (cracked ? (isEdge ? 0.3f : 0.22f) : 0.0f) + fx.hitFlash * 0.45f + fx.charge * 0.6f;
 
             Vtx_t& out = vtx[v++].v;
             out.ob[0] = (s16)(local.x * kVtxScale);
@@ -329,18 +277,22 @@ extern "C" void NayrusCrystal_Draw(Actor* thisx, PlayState* play) {
 
     // Vanilla steady-state scale is (scale * 1.3, scale, scale * 1.3) with scale 0.6 for adults; normalize to that so
     // the spawn "pop" animation and the child size carry over
-    const float scaleXZ = thisx->scale.x / (0.6f * 1.3f);
-    const float scaleY = thisx->scale.y / 0.6f;
-    const float fade = magic->primAlpha / 255.0f;
-    // Lowered so Link sits in the vertical middle of the gem (the lower tip sinks into the ground)
-    const float yOffset = CVarGetFloat(CVAR_ZOP_NAYRU("CrystalYOffset"), -30.0f) * scaleY;
-    const V3 pos = { thisx->world.pos.x, thisx->world.pos.y + yOffset, thisx->world.pos.z };
+    const CrystalFx& fx = GetCrystalFx();
+    // A blocked hit makes the gem pulse; the wind-up before bursting swells it and makes it tremble
+    const float swell = 1.0f + fx.hitFlash * 0.07f + fx.charge * fx.charge * 0.22f;
+    const float scaleXZ = thisx->scale.x / (0.6f * 1.3f) * swell;
+    const float scaleY = thisx->scale.y / 0.6f * swell;
+    const float fade = Clamp01(magic->primAlpha / 255.0f + fx.charge);
+    const float tremble = fx.charge * 3.0f;
+    const V3 pos = { thisx->world.pos.x + Rand_CenteredFloat(tremble),
+                     thisx->world.pos.y + GetCrystalYOffset(thisx->scale.y / 0.6f) + Rand_CenteredFloat(tremble),
+                     thisx->world.pos.z + Rand_CenteredFloat(tremble) };
     // Slow independent spin; vanilla's shape.rot.y is tied to the camera which looks wrong on a gem
     const s16 yaw = (s16)(play->gameplayFrames * 0x90);
 
     OPEN_DISPS(play->state.gfxCtx);
 
-    Vtx* vtx = BuildVertices(play, pos, yaw, scaleXZ, scaleY);
+    Vtx* vtx = BuildVertices(play, pos, yaw, scaleXZ, scaleY, fx);
     Gfx* dl = POLY_XLU_DISP;
     SetupGemMaterial(dl);
 

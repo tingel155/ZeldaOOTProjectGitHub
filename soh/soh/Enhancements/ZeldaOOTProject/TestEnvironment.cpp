@@ -13,6 +13,56 @@ extern "C" {
 #include "macros.h"
 void Play_Init(GameState* thisx);
 void Sram_InitDebugSave(void);
+s32 Object_Spawn(ObjectContext* objectCtx, s16 objectId);
+extern PlayState* gPlayState;
+}
+
+// Enemies placed around Link once the scene is running (Enemies = 1): two Wolfos that keep attacking and four
+// Deku Babas in a ring, close enough to lunge at him
+struct TestEnemy {
+    s16 actorId;
+    s16 objectId;
+    s16 params;
+    float distance;
+    u16 angle;
+};
+static const TestEnemy sTestEnemies[] = {
+    { ACTOR_EN_WF, OBJECT_WF, 0, 220.0f, 0x0000 },        { ACTOR_EN_WF, OBJECT_WF, 0, 220.0f, 0x8000 },
+    { ACTOR_EN_DEKUBABA, OBJECT_DEKUBABA, 0, 95.0f, 0x2000 }, { ACTOR_EN_DEKUBABA, OBJECT_DEKUBABA, 0, 95.0f, 0x6000 },
+    { ACTOR_EN_DEKUBABA, OBJECT_DEKUBABA, 0, 95.0f, 0xA000 }, { ACTOR_EN_DEKUBABA, OBJECT_DEKUBABA, 0, 95.0f, 0xE000 },
+};
+static int sEnemySpawnDelay = -1;
+
+static void TestEnv_SpawnEnemies() {
+    if (sEnemySpawnDelay < 0 || --sEnemySpawnDelay > 0) {
+        return;
+    }
+
+    // Load the objects first; spawn once all of them are resident
+    bool allLoaded = true;
+    for (const TestEnemy& enemy : sTestEnemies) {
+        s32 index = Object_GetIndex(&gPlayState->objectCtx, enemy.objectId);
+        if (index < 0) {
+            Object_Spawn(&gPlayState->objectCtx, enemy.objectId);
+            allLoaded = false;
+        } else if (!Object_IsLoaded(&gPlayState->objectCtx, index)) {
+            allLoaded = false;
+        }
+    }
+    if (!allLoaded) {
+        sEnemySpawnDelay = 1;
+        return;
+    }
+
+    Player* player = GET_PLAYER(gPlayState);
+    for (const TestEnemy& enemy : sTestEnemies) {
+        s16 angle = (s16)(player->actor.shape.rot.y + enemy.angle);
+        f32 x = player->actor.world.pos.x + Math_SinS(angle) * enemy.distance;
+        f32 z = player->actor.world.pos.z + Math_CosS(angle) * enemy.distance;
+        Actor_Spawn(&gPlayState->actorCtx, gPlayState, enemy.actorId, x, player->actor.world.pos.y, z, 0,
+                    angle + 0x8000, 0, enemy.params);
+    }
+    sEnemySpawnDelay = -1;
 }
 
 static void TestEnv_Boot(GameState* state) {
@@ -79,6 +129,11 @@ static void RegisterTestEnvironment() {
     // First frame of the boot logo: jump straight into gameplay
     COND_HOOK(OnZTitleUpdate, CVarGetInteger(CVAR_ZOP_TESTENV("Enabled"), 0),
               [](void* gameState) { TestEnv_Boot((GameState*)gameState); });
+
+    bool enemies = CVarGetInteger(CVAR_ZOP_TESTENV("Enabled"), 0) && CVarGetInteger(CVAR_ZOP_TESTENV("Enemies"), 0);
+    COND_HOOK(OnSceneSpawnActors, enemies, []() { sEnemySpawnDelay = 20; });
+    COND_HOOK(OnPlayerUpdate, enemies, []() { TestEnv_SpawnEnemies(); });
 }
 
-static RegisterShipInitFunc initFunc(RegisterTestEnvironment, { CVAR_ZOP_TESTENV("Enabled") });
+static RegisterShipInitFunc initFunc(RegisterTestEnvironment,
+                                     { CVAR_ZOP_TESTENV("Enabled"), CVAR_ZOP_TESTENV("Enemies") });
