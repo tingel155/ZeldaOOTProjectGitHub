@@ -104,7 +104,7 @@ static void BossGoma_Phase2Slam(BossGoma* this, PlayState* play) {
                 Actor_RequestQuakeAndRumble(&this->actor, play, 14, 22);
                 Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_CRY1);
                 Actor_SpawnFloorDustRing(play, &this->actor, &this->actor.world.pos, 120.0f, 12, 10.0f, 800, 14, true);
-                Actor_SetPlayerKnockbackLargeNoDamage(play, &this->actor, 18.0f, this->actor.yawTowardsPlayer, 9.0f);
+                Actor_SetPlayerKnockbackLargeNoDamage(play, &this->actor, 11.0f, this->actor.yawTowardsPlayer, 6.0f);
                 this->actionState = 1;
                 this->framesUntilNextAction = 30; // Link lands and gets back up
             }
