@@ -6,6 +6,7 @@
 #include "overlays/actors/ovl_Door_Warp1/z_door_warp1.h"
 #include "soh/OTRGlobals.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "soh/Enhancements/ZeldaOOTProject/ZeldaOOTProjectHooks.h"
 #include <libultraship/bridge/consolevariablebridge.h>
 
 #define FLAGS                                                                                 \
@@ -432,7 +433,7 @@ void BossGoma_SetupEncounter(BossGoma* this, PlayState* play) {
 void BossGoma_SetupFloorIdle(BossGoma* this) {
     f32 lastFrame = Animation_GetLastFrame(&gGohmaIdleCrouchedAnim);
 
-    this->framesUntilNextAction = Rand_S16Offset(20, 30);
+    this->framesUntilNextAction = ZOP_AGGRO(Rand_S16Offset(20, 30), Rand_S16Offset(4, 8));
     Animation_Change(&this->skelanime, &gGohmaIdleCrouchedAnim, 1.0f, 0.0f, lastFrame, ANIMMODE_LOOP, -5.0f);
     this->actionFunc = BossGoma_FloorIdle;
 }
@@ -441,7 +442,7 @@ void BossGoma_SetupFloorIdle(BossGoma* this) {
  * On the ceiling and not doing anything for 20-30 frames, leads to spawning children gohmas
  */
 void BossGoma_SetupCeilingIdle(BossGoma* this) {
-    this->framesUntilNextAction = Rand_S16Offset(20, 30);
+    this->framesUntilNextAction = ZOP_AGGRO(Rand_S16Offset(20, 30), Rand_S16Offset(8, 12));
     Animation_Change(&this->skelanime, &gGohmaHangAnim, 1.0f, 0.0f, Animation_GetLastFrame(&gGohmaHangAnim),
                      ANIMMODE_LOOP, -5.0f);
     this->actionFunc = BossGoma_CeilingIdle;
@@ -485,7 +486,7 @@ void BossGoma_SetupCeilingPrepareSpawnGohmas(BossGoma* this) {
     Animation_Change(&this->skelanime, &gGohmaPrepareEggsAnim, 1.0f, 0.0f,
                      Animation_GetLastFrame(&gGohmaPrepareEggsAnim), ANIMMODE_LOOP, -10.0f);
     this->actionFunc = BossGoma_CeilingPrepareSpawnGohmas;
-    this->framesUntilNextAction = 70;
+    this->framesUntilNextAction = ZOP_AGGRO(70, 40);
 }
 
 void BossGoma_SetupWallClimb(BossGoma* this) {
@@ -507,14 +508,14 @@ void BossGoma_SetupCeilingMoveToCenter(BossGoma* this) {
     this->actor.speedXZ = 0.0f;
     this->actor.velocity.y = 0.0f;
     this->actor.gravity = 0.0f;
-    this->framesUntilNextAction = Rand_S16Offset(30, 60);
+    this->framesUntilNextAction = ZOP_AGGRO(Rand_S16Offset(30, 60), Rand_S16Offset(10, 20));
 }
 
 /**
  * Root action when on the floor, leads to attacking or climbing.
  */
 void BossGoma_SetupFloorMain(BossGoma* this) {
-    Animation_Change(&this->skelanime, &gGohmaWalkCrouchedAnim, 1.0f, 0.0f,
+    Animation_Change(&this->skelanime, &gGohmaWalkCrouchedAnim, ZOP_AGGRO(1.0f, 1.6f), 0.0f,
                      Animation_GetLastFrame(&gGohmaWalkCrouchedAnim), ANIMMODE_LOOP, -5.0f);
     this->actionFunc = BossGoma_FloorMain;
     this->framesUntilNextAction = Rand_S16Offset(70, 110);
@@ -554,7 +555,7 @@ void BossGoma_SetupFloorStunned(BossGoma* this) {
  * Take an attack posture, when the player is close enough.
  */
 void BossGoma_SetupFloorAttackPosture(BossGoma* this) {
-    Animation_Change(&this->skelanime, &gGohmaPrepareAttackAnim, 1.0f, 0.0f,
+    Animation_Change(&this->skelanime, &gGohmaPrepareAttackAnim, ZOP_AGGRO(1.0f, 1.5f), 0.0f,
                      Animation_GetLastFrame(&gGohmaPrepareAttackAnim), ANIMMODE_ONCE, -10.0f);
     this->actionFunc = BossGoma_FloorAttackPosture;
 }
@@ -570,7 +571,8 @@ void BossGoma_SetupFloorPrepareAttack(BossGoma* this) {
 }
 
 void BossGoma_SetupFloorAttack(BossGoma* this) {
-    Animation_Change(&this->skelanime, &gGohmaAttackAnim, 1.0f, 0.0f, Animation_GetLastFrame(&gGohmaAttackAnim),
+    Animation_Change(&this->skelanime, &gGohmaAttackAnim, ZOP_AGGRO(1.0f, 1.3f), 0.0f,
+                     Animation_GetLastFrame(&gGohmaAttackAnim),
                      ANIMMODE_ONCE, -10.0f);
     this->actionFunc = BossGoma_FloorAttack;
     this->actionState = 0;
@@ -969,7 +971,7 @@ void BossGoma_Encounter(BossGoma* this, PlayState* play) {
                 this->subCameraId = 0;
                 BossGoma_SetupFloorMain(this);
                 this->disableGameplayLogic = false;
-                this->patienceTimer = 200;
+                this->patienceTimer = ZOP_AGGRO(200, 400);
                 func_80064534(play, &play->csCtx);
                 Player_SetCsActionWithHaltedActors(play, &this->actor, 7);
             }
@@ -1274,7 +1276,7 @@ void BossGoma_FloorAttackPosture(BossGoma* this, PlayState* play) {
     }
 
     if (Animation_OnFrame(&this->skelanime, Animation_GetLastFrame(&gGohmaPrepareAttackAnim))) {
-        if (this->actor.xzDistToPlayer < 250.0f) {
+        if (this->actor.xzDistToPlayer < ZOP_AGGRO(250.0f, 350.0f)) {
             BossGoma_SetupFloorPrepareAttack(this);
         } else {
             BossGoma_SetupFloorMain(this);
@@ -1329,7 +1331,7 @@ void BossGoma_FloorAttack(BossGoma* this, PlayState* play) {
                                  Animation_GetLastFrame(&gGohmaRestAfterAttackAnim), ANIMMODE_LOOP, -1.0f);
 
                 if (this->framesUntilNextAction == 0) {
-                    this->timer = (s16)(Rand_ZeroOne() * 30.0f) + 30;
+                    this->timer = ZOP_AGGRO((s16)(Rand_ZeroOne() * 30.0f) + 30, (s16)(Rand_ZeroOne() * 10.0f) + 8);
                 }
             }
             break;
@@ -1385,7 +1387,7 @@ void BossGoma_FloorLandStruckDown(BossGoma* this, PlayState* play) {
         BossGoma_SetupFloorStunned(this);
         this->sfxFaintTimer = 92;
         this->patienceTimer = 0;
-        this->framesUntilNextAction = 150;
+        this->framesUntilNextAction = ZOP_AGGRO(150, 100);
     }
 
     Actor_SpawnFloorDustRing(play, &this->actor, &this->actor.world.pos, 55.0f, 4, 8.0f, 500, 10, true);
@@ -1400,7 +1402,7 @@ void BossGoma_FloorLand(BossGoma* this, PlayState* play) {
 
     if (Animation_OnFrame(&this->skelanime, this->currentAnimFrameCount)) {
         BossGoma_SetupFloorIdle(this);
-        this->patienceTimer = 200;
+        this->patienceTimer = ZOP_AGGRO(200, 400);
     }
 }
 
@@ -1626,11 +1628,11 @@ void BossGoma_FloorMain(BossGoma* this, PlayState* play) {
         if (this->patienceTimer != 0) {
             this->patienceTimer--;
 
-            if (this->actor.xzDistToPlayer < 150.0f) {
+            if (this->actor.xzDistToPlayer < ZOP_AGGRO(150.0f, 210.0f)) {
                 BossGoma_SetupFloorAttackPosture(this);
             }
 
-            Math_ApproachF(&this->actor.speedXZ, 10.0f / 3.0f, 0.5f, 2.0f);
+            Math_ApproachF(&this->actor.speedXZ, ZOP_AGGRO(10.0f / 3.0f, 6.5f), 0.5f, 2.0f);
             Math_ApproachS(&this->actor.world.rot.y, rot, 5, 0x3E8);
         } else {
             if (this->timer != 0) {

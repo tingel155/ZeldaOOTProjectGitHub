@@ -71,21 +71,31 @@ static void TestEnv_Boot(GameState* state) {
     Sram_InitDebugSave();
     gSaveContext.gameMode = GAMEMODE_NORMAL;
 
+    // Adult: C-Left Nayru's Love, C-Down Din's Fire, C-Right Farore's Wind
+    // Child: C-Left Slingshot, C-Down Deku Nuts, C-Right Bombs (what the first dungeons call for)
+    static const u8 sAdultCItems[3] = { ITEM_NAYRUS_LOVE, ITEM_DINS_FIRE, ITEM_FARORES_WIND };
+    static const u8 sChildCItems[3] = { ITEM_SLINGSHOT, ITEM_NUT, ITEM_BOMB };
+    const u8* cItems = sChildCItems;
+
     if (CVarGetInteger(CVAR_ZOP_TESTENV("Adult"), 1)) {
         gSaveContext.linkAge = LINK_AGE_ADULT;
         Inventory_ChangeEquipment(EQUIP_TYPE_SWORD, EQUIP_VALUE_SWORD_MASTER);
         Inventory_ChangeEquipment(EQUIP_TYPE_SHIELD, EQUIP_VALUE_SHIELD_MIRROR);
         gSaveContext.equips.buttonItems[0] = ITEM_SWORD_MASTER;
+        cItems = sAdultCItems;
+    } else {
+        gSaveContext.linkAge = LINK_AGE_CHILD;
+        Inventory_ChangeEquipment(EQUIP_TYPE_SWORD, EQUIP_VALUE_SWORD_KOKIRI);
+        Inventory_ChangeEquipment(EQUIP_TYPE_SHIELD, EQUIP_VALUE_SHIELD_DEKU);
+        gSaveContext.equips.buttonItems[0] = ITEM_SWORD_KOKIRI;
     }
 
-    // C-Left: Nayru's Love, C-Down: Din's Fire, C-Right: Farore's Wind
-    static const u8 sCItems[3] = { ITEM_NAYRUS_LOVE, ITEM_DINS_FIRE, ITEM_FARORES_WIND };
     for (int i = 0; i < 3; i++) {
-        gSaveContext.equips.buttonItems[i + 1] = sCItems[i];
-        gSaveContext.equips.cButtonSlots[i] = SLOT(sCItems[i]);
+        gSaveContext.equips.buttonItems[i + 1] = cItems[i];
+        gSaveContext.equips.cButtonSlots[i] = SLOT(cItems[i]);
     }
 
-    gSaveContext.healthCapacity = gSaveContext.health = 20 * 0x10;
+    gSaveContext.healthCapacity = gSaveContext.health = CVarGetInteger(CVAR_ZOP_TESTENV("Hearts"), 20) * 0x10;
     gSaveContext.isMagicAcquired = true;
     gSaveContext.isDoubleMagicAcquired = true;
     gSaveContext.isDoubleDefenseAcquired = CVarGetInteger(CVAR_ZOP_TESTENV("DoubleDefense"), 0);

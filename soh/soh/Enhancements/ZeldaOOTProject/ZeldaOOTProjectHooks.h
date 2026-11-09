@@ -8,16 +8,18 @@ extern "C" {
 #endif
 
 struct PlayState;
-struct Player;
 struct ColliderInfo;
 
-// z_player_lib.c, Player_PostLimbDrawGameplay: the matrix stack holds Link's left hand (NayrusSword.cpp)
-void ZOP_OnPlayerLeftHandDraw(struct PlayState* play, struct Player* player);
-
-// z_collision_check.c, CollisionCheck_ApplyDamage: may change the damage an AC collider receives (NayrusSword.cpp).
+// z_collision_check.c, CollisionCheck_ApplyDamage: may change the damage an AC collider receives (Difficulty.cpp).
 // collider is a Collider* (an anonymous struct, so it cannot be forward declared)
 float ZOP_ModifyAcDamage(struct PlayState* play, void* collider, struct ColliderInfo* info, float damage);
+
+// Enemy AI code: nonzero when enemies should use their more aggressive tuning (Difficulty.cpp)
+int ZOP_EnemyAggressive(void);
 
 #ifdef __cplusplus
 }
 #endif
+
+// Picks the aggressive value when the difficulty option is on, the vanilla one otherwise
+#define ZOP_AGGRO(vanilla, aggressive) (ZOP_EnemyAggressive() ? (aggressive) : (vanilla))
