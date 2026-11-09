@@ -2096,8 +2096,14 @@ s32 BossGoma_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f
     OPEN_DISPS(play->state.gfxCtx);
 
     gDPPipeSync(POLY_OPA_DISP++);
-    gDPSetEnvColor(POLY_OPA_DISP++, (s16)this->mainEnvColor[0], (s16)this->mainEnvColor[1], (s16)this->mainEnvColor[2],
-                   255);
+    if (BossGoma_InPhase2(this) && this->visualState != VISUALSTATE_DEFEATED) {
+        // Phase 2: the glowing accents shift from green/cyan toward red
+        gDPSetEnvColor(POLY_OPA_DISP++, (s16)(this->mainEnvColor[0] * 0.3f + 178.0f),
+                       (s16)(this->mainEnvColor[1] * 0.35f), (s16)(this->mainEnvColor[2] * 0.25f), 255);
+    } else {
+        gDPSetEnvColor(POLY_OPA_DISP++, (s16)this->mainEnvColor[0], (s16)this->mainEnvColor[1],
+                       (s16)this->mainEnvColor[2], 255);
+    }
 
     if (this->deadLimbsState[limbIndex] >= 2) {
         *dList = NULL;
@@ -2303,7 +2309,20 @@ void BossGoma_Draw(Actor* thisx, PlayState* play) {
         gSPSegment(POLY_OPA_DISP++, 0x08, BossGoma_EmptyDlist(play->state.gfxCtx));
     }
 
+    // Phase 2: a slight, slowly pulsing red tint over the whole body (same fog trick as the damage color filter)
+    s32 phase2Tint = BossGoma_InPhase2(this) && this->visualState != VISUALSTATE_DEFEATED;
+    if (phase2Tint) {
+        gDPPipeSync(POLY_OPA_DISP++);
+        gDPSetFogColor(POLY_OPA_DISP++, 210, 25, 15, 255);
+        gSPFogPosition(POLY_OPA_DISP++, 0, (s16)(3600.0f + 250.0f * Math_SinS(this->frameCount * 0x500)));
+    }
+
     SkelAnime_DrawSkeletonOpa(play, &this->skelanime, BossGoma_OverrideLimbDraw, BossGoma_PostLimbDraw, this);
+
+    if (phase2Tint) {
+        gDPPipeSync(POLY_OPA_DISP++);
+        POLY_OPA_DISP = Play_SetFog(play, POLY_OPA_DISP);
+    }
 
     CLOSE_DISPS(play->state.gfxCtx);
 }
