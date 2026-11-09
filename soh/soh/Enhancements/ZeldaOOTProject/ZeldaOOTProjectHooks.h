@@ -17,9 +17,15 @@ float ZOP_ModifyAcDamage(struct PlayState* play, void* collider, struct Collider
 // Enemy AI code: nonzero when enemies should use their more aggressive tuning (Difficulty.cpp)
 int ZOP_EnemyAggressive(void);
 
+// Enemy AI code: factor for how long a stunned boss stays down (Difficulty.cpp)
+float ZOP_EnemyStunMult(void);
+
 #ifdef __cplusplus
 }
 #endif
 
 // Picks the aggressive value when the difficulty option is on, the vanilla one otherwise
 #define ZOP_AGGRO(vanilla, aggressive) (ZOP_EnemyAggressive() ? (aggressive) : (vanilla))
+
+// Scales a stun duration in frames
+#define ZOP_STUN(frames) ((s16)((frames) * ZOP_EnemyStunMult()))

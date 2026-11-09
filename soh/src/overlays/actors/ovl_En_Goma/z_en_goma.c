@@ -2,6 +2,7 @@
 #include "objects/gameplay_dangeon_keep/gameplay_dangeon_keep.h"
 #include "objects/object_gol/object_gol.h"
 #include "overlays/actors/ovl_Boss_Goma/z_boss_goma.h"
+#include "soh/Enhancements/ZeldaOOTProject/ZeldaOOTProjectHooks.h"
 #include "overlays/effects/ovl_Effect_Ss_Hahen/z_eff_ss_hahen.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/Enhancements/savestate_serialize.h"
@@ -338,7 +339,7 @@ void EnGoma_SetupHurt(EnGoma* this, PlayState* play) {
         this->actionTimer = 10;
     }
 
-    this->actor.speedXZ = 20.0f;
+    this->actor.speedXZ = ZOP_AGGRO(20.0f, 8.0f);
     this->actor.world.rot.y = this->actor.yawTowardsPlayer + 0x8000;
     if (this->actor.params < 6) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_BJR_DAM1);
@@ -357,6 +358,8 @@ void EnGoma_Hurt(EnGoma* this, PlayState* play) {
     if (this->actionTimer == 0) {
         if ((s8)this->actor.colChkInfo.health <= 0) {
             EnGoma_SetupDie(this);
+        } else if (ZOP_EnemyAggressive()) {
+            EnGoma_SetupPrepareJump(this);
         } else {
             EnGoma_SetupFlee(this);
         }
@@ -441,7 +444,7 @@ void EnGoma_SetupStand(EnGoma* this) {
     f32 lastFrame;
 
     lastFrame = Animation_GetLastFrame(&gObjectGolStandAnim);
-    this->actionTimer = Rand_S16Offset(10, 30);
+    this->actionTimer = ZOP_AGGRO(Rand_S16Offset(10, 30), Rand_S16Offset(3, 8));
     Animation_Change(&this->skelanime, &gObjectGolStandAnim, 1.0f, 0.0f, lastFrame, ANIMMODE_LOOP, -5.0f);
     this->actionFunc = EnGoma_Stand;
     this->gomaType = ENGOMA_NORMAL;
@@ -458,7 +461,7 @@ void EnGoma_SetupPrepareJump(EnGoma* this) {
     Animation_Change(&this->skelanime, &gObjectGolPrepareJumpAnim, 1.0f, 0.0f,
                      Animation_GetLastFrame(&gObjectGolPrepareJumpAnim), ANIMMODE_ONCE, -5.0f);
     this->actionFunc = EnGoma_PrepareJump;
-    this->actionTimer = 30;
+    this->actionTimer = ZOP_AGGRO(30, 14);
 }
 
 void EnGoma_PrepareJump(EnGoma* this, PlayState* play) {
@@ -546,14 +549,14 @@ void EnGoma_ChasePlayer(EnGoma* this, PlayState* play) {
         }
     }
 
-    Math_ApproachF(&this->actor.speedXZ, 10.0f / 3.0f, 0.5f, 2.0f);
-    Math_ApproachS(&this->actor.world.rot.y, this->actor.yawTowardsPlayer, 3, 2000);
+    Math_ApproachF(&this->actor.speedXZ, ZOP_AGGRO(10.0f / 3.0f, 5.5f), 0.5f, 2.0f);
+    Math_ApproachS(&this->actor.world.rot.y, this->actor.yawTowardsPlayer, 3, ZOP_AGGRO(2000, 3500));
     Math_ApproachS(&this->actor.shape.rot.y, this->actor.world.rot.y, 2, 3000);
 
     if (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) {
         this->actor.velocity.y = 0.0f;
     }
-    if (this->actor.xzDistToPlayer <= 150.0f) {
+    if (this->actor.xzDistToPlayer <= ZOP_AGGRO(150.0f, 190.0f)) {
         EnGoma_SetupPrepareJump(this);
     }
 }

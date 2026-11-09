@@ -5,6 +5,7 @@
 //   gZOP.Difficulty.DamageMult   damage enemies deal to Link (default 2)
 //   gZOP.Difficulty.HealthMult   enemy health (default 2)
 //   gZOP.Difficulty.Aggressive   aggressive AI tuning, see ZOP_AGGRO in the enemies' source (default 1)
+//   gZOP.Difficulty.StunMult     how long a stunned boss stays down, see ZOP_STUN (default 1.5)
 
 #include <libultraship/bridge/consolevariablebridge.h>
 
@@ -53,6 +54,10 @@ extern "C" float ZOP_ModifyAcDamage(PlayState* play, void* colliderRef, Collider
 
 extern "C" int ZOP_EnemyAggressive(void) {
     return CVAR_DIFFICULTY_VALUE && CVarGetInteger(CVAR_ZOP_DIFFICULTY("Aggressive"), 1);
+}
+
+extern "C" float ZOP_EnemyStunMult(void) {
+    return CVAR_DIFFICULTY_VALUE ? CVarGetFloat(CVAR_ZOP_DIFFICULTY("StunMult"), 1.5f) : 1.0f;
 }
 
 static void RegisterDifficulty() {

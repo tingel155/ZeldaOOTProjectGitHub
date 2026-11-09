@@ -1387,7 +1387,7 @@ void BossGoma_FloorLandStruckDown(BossGoma* this, PlayState* play) {
         BossGoma_SetupFloorStunned(this);
         this->sfxFaintTimer = 92;
         this->patienceTimer = 0;
-        this->framesUntilNextAction = ZOP_AGGRO(150, 100);
+        this->framesUntilNextAction = ZOP_STUN(150);
     }
 
     Actor_SpawnFloorDustRing(play, &this->actor, &this->actor.world.pos, 55.0f, 4, 8.0f, 500, 10, true);
@@ -1861,9 +1861,9 @@ void BossGoma_UpdateHit(BossGoma* this, PlayState* play) {
                 this->sfxFaintTimer = 100;
 
                 if (acHitInfo->toucher.dmgFlags & 1) {
-                    this->framesUntilNextAction = 40;
+                    this->framesUntilNextAction = ZOP_STUN(40);
                 } else {
-                    this->framesUntilNextAction = 90;
+                    this->framesUntilNextAction = ZOP_STUN(90);
                 }
 
                 this->timer = 4;
