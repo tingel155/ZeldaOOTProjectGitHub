@@ -26,7 +26,6 @@ namespace {
 constexpr int kLaunchFrames = 8;     // flies straight along its fan direction before homing
 constexpr float kStopHomingDist = 110.0f;
 constexpr float kTurnRate = 0.13f;
-constexpr float kMaxSpeed = 15.0f;
 constexpr int kFlyFrames = 100;
 constexpr int kStuckFrames = 50;
 constexpr int kStuckFadeFrames = 15;
@@ -42,6 +41,8 @@ struct PearlArrow {
     V3 dir;
     V3 trail[3];
     float speed;
+    float maxSpeed;
+    float accel;
     float hue;
     s16 roll;
     s16 timer;
@@ -93,7 +94,10 @@ void PearlArrow_Init(Actor* thisx, PlayState* play) {
     for (V3& t : self->trail) {
         t = self->pos;
     }
-    self->speed = 7.0f;
+    // Every arrow gets its own pace: some drift in slowly, some streak at Link
+    self->speed = 5.0f + Rand_ZeroOne() * 4.0f;
+    self->maxSpeed = 10.0f + Rand_ZeroOne() * 13.0f;
+    self->accel = 0.35f + Rand_ZeroOne() * 0.75f;
     self->hue = Rand_ZeroOne();
     self->roll = (s16)(Rand_ZeroOne() * 0xFFFF);
     self->timer = 0;
@@ -140,7 +144,7 @@ void PearlArrow_Update(Actor* thisx, PlayState* play) {
         }
     }
 
-    self->speed = (self->speed + 0.6f < kMaxSpeed) ? self->speed + 0.6f : kMaxSpeed;
+    self->speed = (self->speed + self->accel < self->maxSpeed) ? self->speed + self->accel : self->maxSpeed;
     self->pos = self->pos + self->dir * self->speed;
     self->roll += 0x1800;
     self->trail[2] = self->trail[1];

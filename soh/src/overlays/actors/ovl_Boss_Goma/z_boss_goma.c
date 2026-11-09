@@ -59,10 +59,88 @@ void BossGoma_SpawnChildGohma(BossGoma* this, PlayState* play, s16 i);
 // ZeldaOOTProject: second phase once Gohma has lost 70% of her health. She retreats to the ceiling more often and,
 // instead of laying eggs, broods there and fires volleys of homing pearl arrows.
 #define BOSSGOMA_PHASE2_VOLLEY_FRAMES 110
+#define BOSSGOMA_PHASE2_ROAR_FRAMES 80
 static u8 sZopPhase2Announced;
+static s16 sZopRoarCamAngle;
 
 static s32 BossGoma_InPhase2(BossGoma* this) {
     return ZOP_BossPhase2(&this->actor, 10);
+}
+
+static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play);
+void BossGoma_SetupFloorMain(BossGoma* this);
+
+/**
+ * Phase 2 intro: a short cutscene. The music stops, Gohma rears up and screams while the camera circles her,
+ * then the boss music starts again and she heads for the ceiling.
+ */
+static void BossGoma_SetupPhase2Roar(BossGoma* this, PlayState* play) {
+    Camera* camera = Play_GetCamera(play, 0);
+
+    Animation_Change(&this->skelanime, &gGohmaStandAnim, 1.0f, 0.0f, Animation_GetLastFrame(&gGohmaStandAnim),
+                     ANIMMODE_LOOP, -10.0f);
+    this->actionFunc = BossGoma_Phase2Roar;
+    this->framesUntilNextAction = BOSSGOMA_PHASE2_ROAR_FRAMES;
+    this->disableGameplayLogic = true;
+    this->actor.speedXZ = 0.0f;
+
+    func_80064520(play, &play->csCtx);
+    Player_SetCsActionWithHaltedActors(play, &this->actor, 1);
+    this->subCameraId = Play_CreateSubCamera(play);
+    Play_ChangeCameraStatus(play, 0, 3);
+    Play_ChangeCameraStatus(play, this->subCameraId, 7);
+    this->subCameraEye = camera->eye;
+    this->subCameraAt = camera->at;
+    sZopRoarCamAngle = Math_Vec3f_Yaw(&this->actor.world.pos, &camera->eye);
+
+    // Stop the boss music
+    Audio_QueueSeqCmd(0x1 << 28 | SEQ_PLAYER_BGM_MAIN << 24 | 0x100FF);
+}
+
+static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
+    s16 elapsed = BOSSGOMA_PHASE2_ROAR_FRAMES - this->framesUntilNextAction;
+
+    SkelAnime_Update(&this->skelanime);
+    Math_ApproachS(&this->actor.shape.rot.x, 0, 2, 0xBB8);
+
+    if (elapsed == 6 || elapsed == 30 || elapsed == 54) {
+        Audio_PlayActorSound2(&this->actor, (elapsed == 30) ? NA_SE_EN_GOMA_CRY2 : NA_SE_EN_GOMA_CRY1);
+        Actor_RequestQuakeAndRumble(&this->actor, play, 8, 14);
+    }
+
+    // Eye wide open and twitching while she screams
+    Math_ApproachF(&this->eyeIrisScaleX, 1.3f + 0.25f * Math_SinS(elapsed * 0x1800), 0.5f, 0.3f);
+    Math_ApproachF(&this->eyeIrisScaleY, 1.3f + 0.25f * Math_CosS(elapsed * 0x1500), 0.5f, 0.3f);
+    this->visualState = VISUALSTATE_RED;
+
+    // Camera circles Gohma once, slightly below her eye line
+    sZopRoarCamAngle += 0x2C0;
+    Math_ApproachF(&this->subCameraEye.x, this->actor.world.pos.x + Math_SinS(sZopRoarCamAngle) * 260.0f, 0.3f, 60.0f);
+    Math_ApproachF(&this->subCameraEye.y, this->actor.world.pos.y + 70.0f, 0.3f, 30.0f);
+    Math_ApproachF(&this->subCameraEye.z, this->actor.world.pos.z + Math_CosS(sZopRoarCamAngle) * 260.0f, 0.3f, 60.0f);
+    Math_ApproachF(&this->subCameraAt.x, this->actor.focus.pos.x, 0.3f, 40.0f);
+    Math_ApproachF(&this->subCameraAt.y, this->actor.focus.pos.y, 0.3f, 40.0f);
+    Math_ApproachF(&this->subCameraAt.z, this->actor.focus.pos.z, 0.3f, 40.0f);
+    Play_CameraSetAtEye(play, this->subCameraId, &this->subCameraAt, &this->subCameraEye);
+
+    if (this->framesUntilNextAction == 0) {
+        Camera* cam = Play_GetCamera(play, 0);
+
+        cam->eye = this->subCameraEye;
+        cam->eyeNext = this->subCameraEye;
+        cam->at = this->subCameraAt;
+        func_800C08AC(play, this->subCameraId, 0);
+        this->subCameraId = 0;
+        func_80064534(play, &play->csCtx);
+        Player_SetCsActionWithHaltedActors(play, &this->actor, 7);
+        this->disableGameplayLogic = false;
+        this->invincibilityFrames = 10;
+        Audio_QueueSeqCmd(SEQ_PLAYER_BGM_MAIN << 24 | NA_BGM_BOSS);
+
+        // Out of patience: she backs off, climbs the nearest wall and starts shooting
+        BossGoma_SetupFloorMain(this);
+        this->patienceTimer = 0;
+    }
 }
 
 const ActorInit Boss_Goma_InitVars = {
@@ -1542,7 +1620,7 @@ void BossGoma_CeilingPrepareSpawnGohmas(BossGoma* this, PlayState* play) {
 
     if (BossGoma_InPhase2(this)) {
         // Brooding pose, but three volleys of pearl arrows instead of eggs; then drop back to the floor.
-        // Still vulnerable: an eye hit knocks her down like in vanilla.
+        // The eye stays shut meanwhile (see BossGoma_UpdateEye).
         if (this->framesUntilNextAction == 90 || this->framesUntilNextAction == 62 ||
             this->framesUntilNextAction == 34) {
             ZOP_SpawnPearlVolley(play, &this->actor, 5);
@@ -1786,6 +1864,13 @@ void BossGoma_UpdateEye(BossGoma* this, PlayState* play) {
             this->eyeClosedTimer = 7;
         }
 
+        // Phase 2: eye shut on the way up and while shooting from the ceiling, so she can't simply be shot down
+        if (BossGoma_InPhase2(this) &&
+            (this->actionFunc == BossGoma_WallClimb || this->actionFunc == BossGoma_CeilingMoveToCenter ||
+             this->actionFunc == BossGoma_CeilingIdle || this->actionFunc == BossGoma_CeilingPrepareSpawnGohmas)) {
+            this->eyeClosedTimer = 7;
+        }
+
         if (this->eyeClosedTimer != 0) {
             this->eyeClosedTimer--;
             // close eye
@@ -1874,14 +1959,13 @@ void BossGoma_UpdateHit(BossGoma* this, PlayState* play) {
 
                 if ((s8)this->actor.colChkInfo.health > 0) {
                     Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_DAM1);
-                    BossGoma_SetupFloorDamaged(this);
                     EffectSsSibuki_SpawnBurst(play, &this->actor.focus.pos);
 
                     if (!sZopPhase2Announced && BossGoma_InPhase2(this)) {
-                        // Entering phase 2: angry roar and a rumble
                         sZopPhase2Announced = true;
-                        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_CRY1);
-                        Actor_RequestQuakeAndRumble(&this->actor, play, 10, 30);
+                        BossGoma_SetupPhase2Roar(this, play);
+                    } else {
+                        BossGoma_SetupFloorDamaged(this);
                     }
                 } else {
                     BossGoma_SetupDefeated(this, play);
