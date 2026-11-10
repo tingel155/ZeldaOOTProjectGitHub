@@ -622,8 +622,9 @@ static void BossGoma_Phase2FloorShoot(BossGoma* this, PlayState* play) {
     Math_ApproachS(&this->actor.shape.rot.x, 0, 2, 0xBB8);
     Math_ApproachS(&this->actor.world.rot.y, this->actor.yawTowardsPlayer, 4, 0x5DC);
 
-    // The first shot waits until her eye has been open for a moment, so stunning her right after it opens works
-    if (elapsed == 4 && sZopEyeOpenFrames < BOSSGOMA_SHOOT_DELAY_AFTER_OPEN) {
+    // If her eye has just opened, the first shot waits a moment, so stunning her right after it opens works. The laser
+    // comes from her tail, so the eye keeps its usual open/shut rhythm while she shoots.
+    if (elapsed == 4 && sZopEyeOpenFrames > 0 && sZopEyeOpenFrames < BOSSGOMA_SHOOT_DELAY_AFTER_OPEN) {
         this->framesUntilNextAction++;
         elapsed--;
     }
@@ -729,6 +730,15 @@ static void BossGoma_Phase2Barrage(BossGoma* this, PlayState* play) {
         BossGoma_SetupFloorMain(this);
         this->patienceTimer = 120;
     }
+}
+
+/**
+ * Phase 2 lasers come out of the tip of her tail (GohmaLaser.cpp), not her eye
+ */
+void ZOP_GohmaLaserOrigin(void* boss, void* out) {
+    BossGoma* this = (BossGoma*)boss;
+
+    *(Vec3f*)out = this->lastTailLimbWorldPos;
 }
 
 static s32 BossGoma_LidsFollowAnim(BossGoma* this) {
@@ -2563,16 +2573,6 @@ void BossGoma_UpdateEye(BossGoma* this, PlayState* play) {
             }
             if (sZopEyeCycleClosed) {
                 this->eyeClosedTimer = 7;
-            }
-        }
-
-        // Phase 2: while her laser is out (also on the ceiling) and while she shoots from the floor the eye is fully
-        // open and hittable, no blinking either. The open/shut cycle starts over with an open stretch.
-        if (sZopPhase2Announced && (ZOP_GohmaLaserActive(play) || this->actionFunc == BossGoma_Phase2FloorShoot)) {
-            this->eyeClosedTimer = 0;
-            if (sZopEyeCycleClosed || sZopEyeCycleTimer < 24) {
-                sZopEyeCycleClosed = false;
-                sZopEyeCycleTimer = 24;
             }
         }
 
