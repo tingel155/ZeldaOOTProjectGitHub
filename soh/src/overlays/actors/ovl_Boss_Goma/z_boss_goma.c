@@ -406,7 +406,7 @@ static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
         sZopFloorShootCooldown = 60;
 
         sZopEyeCycleFromRoar = true;
-        sZopBarrageCooldown = 80;
+        sZopBarrageCooldown = 120;
 
         // Out of patience: she backs off, climbs the nearest wall and starts shooting
         BossGoma_SetupFloorMain(this);
@@ -481,6 +481,9 @@ static void BossGoma_SetupPhase2Signal(BossGoma* this) {
                      ANIMMODE_LOOP, -6.0f);
     this->actionFunc = BossGoma_Phase2Signal;
     this->framesUntilNextAction = BOSSGOMA_SIGNAL_FRAMES;
+    // Next barrage in 25-35 s. Set here and not when it ends: a stun cuts the barrage short, and the attack then
+    // started again right away
+    sZopBarrageCooldown = (s16)Rand_S16Offset(500, 200);
     this->actor.speedXZ = 0.0f;
 }
 
@@ -537,7 +540,6 @@ static void BossGoma_Phase2Barrage(BossGoma* this, PlayState* play) {
 
     if (this->actor.xzDistToPlayer < BOSSGOMA_BARRAGE_REACHED_DIST || this->framesUntilNextAction == 0) {
         ZOP_StopGohmaLasers(play);
-        sZopBarrageCooldown = (s16)Rand_S16Offset(240, 120);
         BossGoma_SetupFloorMain(this);
         this->patienceTimer = 120;
     }
