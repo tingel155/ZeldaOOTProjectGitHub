@@ -7,6 +7,7 @@
 //   ForceFPS         frame rate forced on every start (default 60, 0 = leave the setting alone)
 //   SwordCombos      repeated sword presses chain different swings, ending in a finisher (default 1)
 //   ComboWindow      game frames after a swing in which the next press still continues the combo (default 8)
+//   CameraSpeed      speed factor of the free camera on top of the menu sensitivity (default 1.5)
 //   CameraSmoothing  share of the stick input the free camera follows per frame, 1 = instant (default 0.3)
 //   CameraCurve      0..1, how much small stick deflections are slowed down for fine aiming (default 0.5)
 //   PresetVersion    last applied version of the settings preset; the preset is applied once per version, so
@@ -322,8 +323,9 @@ extern "C" void ZOP_SmoothFreeLook(float* camX, float* camY, int frame) {
         float n = std::min(std::fabs(v) / 850.0f, 1.0f);
         return v * ((1.0f - curve) + curve * n);
     };
-    float targetX = shape(*camX);
-    float targetY = shape(*camY);
+    float speed = CVarGetFloat(CVAR_ZOP_CONTROLS("CameraSpeed"), 1.5f);
+    float targetX = shape(*camX) * speed;
+    float targetY = shape(*camY) * speed;
 
     // Ease toward the stick instead of following it instantly
     float follow = std::clamp(CVarGetFloat(CVAR_ZOP_CONTROLS("CameraSmoothing"), 0.3f), 0.05f, 1.0f);
