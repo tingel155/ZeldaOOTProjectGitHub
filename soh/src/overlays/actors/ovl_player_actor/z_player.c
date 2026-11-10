@@ -30,6 +30,7 @@
 #include "soh/frame_interpolation.h"
 #include "soh/OTRGlobals.h"
 #include "soh/Enhancements/savestate_serialize.h"
+#include "soh/Enhancements/ZeldaOOTProject/ZeldaOOTProjectHooks.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -6455,7 +6456,8 @@ s32 Player_ActionHandler_Roll(Player* this, PlayState* play) {
             return true;
         } else if ((this->putAwayCooldownTimer == 0) && (this->heldItemAction >= PLAYER_IA_SWORD_MASTER)) {
             Player_UseItem(play, this, ITEM_NONE);
-        } else {
+        } else if (!ZOP_KeepNaviOut()) {
+            // ZeldaOOTProject: with Navi kept out, A no longer calls her in or out
             this->stateFlags2 ^= PLAYER_STATE2_NAVI_ACTIVE;
         }
     }
@@ -11069,7 +11071,7 @@ void Player_UpdateInterface(PlayState* play, Player* this) {
                                Player_IsZTargeting(this) && (controlStickDirection >= PLAYER_STICK_DIR_LEFT)) {
                         doAction = DO_ACTION_JUMP;
                     } else if ((this->heldItemAction >= PLAYER_IA_SWORD_MASTER) ||
-                               ((this->stateFlags2 & PLAYER_STATE2_NAVI_ACTIVE) &&
+                               (!ZOP_KeepNaviOut() && (this->stateFlags2 & PLAYER_STATE2_NAVI_ACTIVE) &&
                                 (play->actorCtx.targetCtx.arrowPointedActor == NULL))) {
                         doAction = DO_ACTION_PUTAWAY;
                     }

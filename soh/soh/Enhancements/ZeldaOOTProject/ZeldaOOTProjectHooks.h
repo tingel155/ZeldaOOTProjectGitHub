@@ -41,6 +41,10 @@ void ZOP_SpawnGohmaLaser(struct PlayState* play, void* shooter);
 void ZOP_StopGohmaLasers(struct PlayState* play);
 int ZOP_IsGohmaLaser(short actorId);
 
+// z_player.c / z_en_elf.c: nonzero when Navi always flies next to Link and the A button no longer calls her in or
+// out (ModernControls.cpp)
+int ZOP_KeepNaviOut(void);
+
 // Testing aid: bosses skip straight to their phase 2 intro after the encounter cutscene (Difficulty.cpp)
 int ZOP_TestPhase2Intro(void);
 

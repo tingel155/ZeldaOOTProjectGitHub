@@ -8,6 +8,7 @@
 #include "objects/gameplay_keep/gameplay_keep.h"
 #include <assert.h>
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "soh/Enhancements/ZeldaOOTProject/ZeldaOOTProjectHooks.h"
 #include <libultraship/bridge/consolevariablebridge.h>
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED | ACTOR_FLAG_UPDATE_DURING_OCARINA)
@@ -1098,7 +1099,10 @@ void func_80A0461C(EnElf* this, PlayState* play) {
             } else {
                 switch (this->unk_2A8) {
                     case 0:
-                        if (this->unk_2C0 != 0) {
+                        if (ZOP_KeepNaviOut()) {
+                            // ZeldaOOTProject: Navi stays out instead of vanishing into Link after a while
+                            temp = 0;
+                        } else if (this->unk_2C0 != 0) {
                             this->unk_2C0--;
                             temp = 0;
                         } else {
