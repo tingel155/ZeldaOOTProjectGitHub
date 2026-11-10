@@ -76,6 +76,9 @@ void ZOP_LockOnFraming(void* target, void* playerPos, float playerHeight, float*
 // z_camera.c, Camera_Free: softens the right-stick camera input (yaw/pitch deltas of this frame)
 void ZOP_SmoothFreeLook(float* camX, float* camY, int frame);
 
+// Phase 2 intro cutscene style: 0 = slam and roar, 1 = fake death (Difficulty.cpp)
+int ZOP_Phase2IntroStyle(void);
+
 // Testing aid: bosses skip straight to their phase 2 intro after the encounter cutscene (Difficulty.cpp)
 int ZOP_TestPhase2Intro(void);
 // Testing aid: Gohma stands in front of Link and cycles through eyelid poses

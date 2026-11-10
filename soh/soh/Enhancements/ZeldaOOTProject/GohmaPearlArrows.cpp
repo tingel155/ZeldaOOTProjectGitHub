@@ -1,6 +1,7 @@
 // Gohma phase 2: pearl magic arrows.
 //
-// In her second phase Gohma fires volleys of pearl shards (same look as the Nayru's Love burst). Each volley picks
+// In her second phase Gohma fires volleys of spikes made of her own shell (her shell texture, so they turn red with
+// her in phase 2; the shape is the pearl shard of the Nayru's Love burst). Each volley picks
 // one way to fly:
 //   homing    fan out, then curve in on Link, but stop steering once close so they can be dodged
 //   straight  a tight bundle shot right at Link, fast and without steering
@@ -21,6 +22,7 @@ extern "C" {
 #include "functions.h"
 #include "macros.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
+#include "objects/object_goma/object_goma.h"
 }
 
 using namespace NayrusLove;
@@ -264,6 +266,74 @@ void PearlArrow_Update(Actor* thisx, PlayState* play) {
     CollisionCheck_SetAT(play, &play->colChkCtx, &self->collider.base);
 }
 
+// Spike geometry: the pearl shard shape (double pyramid), textured with Gohma's shell and shaded by a fixed light
+constexpr float kSpikeVtxScale = 8.0f;
+
+void DrawGohmaSpike(PlayState* play, Gfx*& dl, V3 pos, V3 dir, s16 roll, float length, float width, float scale,
+                    u8 alpha) {
+    constexpr int kTris = 8;
+    const V3 tipFront = { 0.0f, 0.0f, length * 0.5f };
+    const V3 tipBack = { 0.0f, 0.0f, -length * 0.35f };
+    const V3 ring[4] = { { width, 0.0f, length * 0.05f },
+                         { 0.0f, width * 0.6f, length * 0.05f },
+                         { -width, 0.0f, length * 0.05f },
+                         { 0.0f, -width * 0.6f, length * 0.05f } };
+    // Brightness per face (fake light from above-front), front faces brighter than the back cone
+    const float faceLight[8] = { 1.0f, 0.85f, 0.6f, 0.75f, 0.7f, 0.6f, 0.4f, 0.5f };
+
+    Vtx* vtx = (Vtx*)Graph_Alloc(play->state.gfxCtx, kTris * 3 * sizeof(Vtx));
+    int v = 0;
+    // Texture coordinates in 10.5 fixed point: the 32x32 shell texture stretched along the spike
+    auto emit = [&](const V3& p, int face, s16 u, s16 t) {
+        float light = faceLight[face];
+        Vtx_t& out = vtx[v++].v;
+        out.ob[0] = (s16)(p.x * kSpikeVtxScale);
+        out.ob[1] = (s16)(p.y * kSpikeVtxScale);
+        out.ob[2] = (s16)(p.z * kSpikeVtxScale);
+        out.flag = 0;
+        out.tc[0] = u;
+        out.tc[1] = t;
+        out.cn[0] = out.cn[1] = out.cn[2] = ToU8(light);
+        out.cn[3] = 255;
+    };
+    for (int k = 0; k < 4; k++) {
+        emit(tipFront, k, 16 << 5, 0);
+        emit(ring[k], k, 0, 24 << 5);
+        emit(ring[(k + 1) % 4], k, 32 << 5, 24 << 5);
+        emit(tipBack, k + 4, 16 << 5, 32 << 5);
+        emit(ring[(k + 1) % 4], k + 4, 32 << 5, 24 << 5);
+        emit(ring[k], k + 4, 0, 24 << 5);
+    }
+
+    gDPPipeSync(dl++);
+    gDPSetCycleType(dl++, G_CYC_1CYCLE);
+    gDPSetRenderMode(dl++, G_RM_ZB_XLU_SURF, G_RM_ZB_XLU_SURF2);
+    // color = texture * shade, alpha = prim (fades out when stuck)
+    gDPSetCombineLERP(dl++, TEXEL0, 0, SHADE, 0, 0, 0, 0, PRIMITIVE, TEXEL0, 0, SHADE, 0, 0, 0, 0, PRIMITIVE);
+    gDPSetPrimColor(dl++, 0, 0, 255, 255, 255, alpha);
+    gDPLoadTextureBlock(dl++, gGohmaShellTex, G_IM_FMT_RGBA, G_IM_SIZ_16b, 32, 32, 0, G_TX_NOMIRROR | G_TX_WRAP,
+                        G_TX_NOMIRROR | G_TX_WRAP, 5, 5, G_TX_NOLOD, G_TX_NOLOD);
+    gSPTexture(dl++, 0xFFFF, 0xFFFF, 0, G_TX_RENDERTILE, G_ON);
+    gSPClearGeometryMode(dl++, G_LIGHTING | G_TEXTURE_GEN | G_TEXTURE_GEN_LINEAR | G_FOG | G_CULL_BOTH);
+    gSPSetGeometryMode(dl++, G_SHADE | G_SHADING_SMOOTH | G_ZBUFFER);
+
+    // Align local +Z with the flight direction
+    float yaw = atan2f(dir.x, dir.z);
+    float pitch = -asinf(dir.y < -1.0f ? -1.0f : (dir.y > 1.0f ? 1.0f : dir.y));
+    Matrix_Translate(pos.x, pos.y, pos.z, MTXMODE_NEW);
+    Matrix_RotateY(yaw, MTXMODE_APPLY);
+    Matrix_RotateX(pitch, MTXMODE_APPLY);
+    Matrix_RotateZ(roll * (kPi / 0x8000), MTXMODE_APPLY);
+    float s = scale / kSpikeVtxScale;
+    Matrix_Scale(s, s, s, MTXMODE_APPLY);
+    gSPMatrix(dl++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPVertex(dl++, (uintptr_t)vtx, kTris * 3, 0);
+    for (int t = 0; t < kTris; t += 2) {
+        gSP2Triangles(dl++, t * 3, t * 3 + 1, t * 3 + 2, 0, t * 3 + 3, t * 3 + 4, t * 3 + 5, 0);
+    }
+    gSPTexture(dl++, 0, 0, 0, G_TX_RENDERTILE, G_OFF);
+}
+
 } // namespace
 
 // extern "C": OPEN_DISPS declares C-linkage helpers at block scope
@@ -280,10 +350,10 @@ extern "C" void PearlArrow_Draw(Actor* thisx, PlayState* play) {
     // Glowing head and a short fading trail while in flight
     if (self->state == ARROW_FLYING) {
         Gfx_SetupDL_25Xlu(play->state.gfxCtx);
-        gDPSetEnvColor(POLY_XLU_DISP++, 255, 140, 220, 255);
+        gDPSetEnvColor(POLY_XLU_DISP++, 255, 90, 40, 255);
         V3 points[4] = { self->pos, self->trail[0], self->trail[1], self->trail[2] };
         for (int i = 0; i < 4; i++) {
-            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0x80, 255, 255, 255, ToU8(0.9f - i * 0.25f));
+            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0x80, 255, 200, 160, ToU8(0.55f - i * 0.15f));
             Matrix_Translate(points[i].x, points[i].y, points[i].z, MTXMODE_NEW);
             Matrix_Mult(&play->billboardMtxF, MTXMODE_APPLY);
             float s = 0.018f - i * 0.004f;
@@ -294,8 +364,8 @@ extern "C" void PearlArrow_Draw(Actor* thisx, PlayState* play) {
     }
 
     Gfx* dl = POLY_XLU_DISP;
-    SetupPearlShardMaterial(dl);
-    DrawPearlShard(play, dl, self->pos, self->dir, self->roll, kLength, kWidth, self->hue, scale, time);
+    DrawGohmaSpike(play, dl, self->pos, self->dir, self->roll, kLength, kWidth, 1.0f,
+                   ToU8(scale)); // stuck spikes fade out instead of shrinking
     POLY_XLU_DISP = dl;
 
     CLOSE_DISPS(play->state.gfxCtx);

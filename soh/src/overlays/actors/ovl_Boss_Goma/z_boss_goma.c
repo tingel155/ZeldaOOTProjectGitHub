@@ -193,6 +193,8 @@ static void BossGoma_Phase2Signal(BossGoma* this, PlayState* play);
 static void BossGoma_Phase2Barrage(BossGoma* this, PlayState* play);
 static void BossGoma_SetupPhase2Signal(BossGoma* this);
 static void BossGoma_SetupPhase2Barrage(BossGoma* this);
+static void BossGoma_Phase2FakeDeath(BossGoma* this, PlayState* play);
+static void BossGoma_SetupPhase2FakeDeath(BossGoma* this, PlayState* play);
 static s32 BossGoma_TryBarrage(BossGoma* this);
 void BossGoma_PlayEffectsAndSfx(BossGoma* this, PlayState* play, s16 arg2, s16 amountMinus1);
 void BossGoma_SetupFloorMain(BossGoma* this);
@@ -306,6 +308,81 @@ static void BossGoma_SetHaze(PlayState* play, f32 intensity) {
     play->envCtx.adjFogNear = (fogNear > 900.0f) ? (s16)((900.0f - fogNear) * intensity) : 0;
 }
 
+/**
+ * Phase 2 cutscenes: hard cut to Link's face, he flinches in shock (shotFrame counts from the cut). Telephoto: far away
+ * with a narrow field of view. The boss music kicks back in with his startle.
+ */
+static void BossGoma_CsLinkStartle(BossGoma* this, PlayState* play, s16 shotFrame) {
+    Player* player = GET_PLAYER(play);
+    Vec3f* head = &player->bodyPartsPos[PLAYER_BODYPART_HEAD];
+    s16 linkYaw = Math_Vec3f_Yaw(&player->actor.world.pos, &this->actor.world.pos);
+
+    if (shotFrame == 0) {
+        player->actor.shape.rot.y = player->actor.world.rot.y = player->yaw = linkYaw;
+        // One startled step back: the backstep hop, plus his "surprised" voice
+        LinkAnimation_Change(play, &player->skelAnime, (LinkAnimationHeader*)gPlayerAnim_link_normal_backspace, 1.0f,
+                             0.0f, Animation_GetLastFrame(gPlayerAnim_link_normal_backspace), ANIMMODE_ONCE, -3.0f);
+        Audio_PlayActorSound2(&player->actor, LINK_IS_ADULT ? NA_SE_VO_LI_SURPRISE : NA_SE_VO_LI_SURPRISE_KID);
+        Play_CameraSetFov(play, this->subCameraId, 16.0f);
+        Audio_QueueSeqCmd(SEQ_PLAYER_BGM_MAIN << 24 | NA_BGM_BOSS);
+    }
+    if (shotFrame < 7) {
+        // Slide back about 20 units along the step
+        player->actor.world.pos.x -= Math_SinS(linkYaw) * 3.0f;
+        player->actor.world.pos.z -= Math_CosS(linkYaw) * 3.0f;
+    }
+    player->actor.shape.face = 7; // wide eyes, grimacing mouth (PLAYER_FACE_SURPRISED in the decomp)
+
+    this->subCameraEye.x = head->x + Math_SinS(linkYaw) * 180.0f + Math_SinS(linkYaw + 0x4000) * 40.0f;
+    this->subCameraEye.y = head->y + 6.0f;
+    this->subCameraEye.z = head->z + Math_CosS(linkYaw) * 180.0f + Math_CosS(linkYaw + 0x4000) * 40.0f;
+    this->subCameraAt.x = head->x;
+    this->subCameraAt.y = head->y + 1.0f;
+    this->subCameraAt.z = head->z;
+}
+
+/**
+ * Phase 2 cutscenes: hands control back. The camera goes behind Link looking at Gohma; she is out of patience, so she
+ * backs off and climbs the nearest wall to start shooting.
+ */
+static void BossGoma_EndPhase2Cutscene(BossGoma* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    Camera* cam = Play_GetCamera(play, 0);
+    // Hand back a camera behind Link, looking at Gohma
+    s16 toGohma = Math_Vec3f_Yaw(&player->actor.world.pos, &this->actor.world.pos);
+    Vec3f eye;
+    Vec3f at;
+
+    eye.x = player->actor.world.pos.x - Math_SinS(toGohma) * 200.0f;
+    eye.y = player->actor.world.pos.y + 80.0f;
+    eye.z = player->actor.world.pos.z - Math_CosS(toGohma) * 200.0f;
+    at.x = (player->actor.world.pos.x + this->actor.focus.pos.x) * 0.5f;
+    at.y = (player->actor.world.pos.y + 40.0f + this->actor.focus.pos.y) * 0.5f;
+    at.z = (player->actor.world.pos.z + this->actor.focus.pos.z) * 0.5f;
+    player->actor.shape.rot.y = player->actor.world.rot.y = player->yaw = toGohma;
+    cam->eye = eye;
+    cam->eyeNext = eye;
+    cam->at = at;
+    this->subCameraEye = eye;
+    this->subCameraAt = at;
+    play->manualCamera = false;
+    func_800C08AC(play, this->subCameraId, 0);
+    this->subCameraId = 0;
+    func_80064534(play, &play->csCtx);
+    Player_SetCsActionWithHaltedActors(play, &this->actor, 7);
+    BossGoma_SetHaze(play, 0.0f);
+    this->disableGameplayLogic = false;
+    this->invincibilityFrames = 10;
+    sZopFloorShootCooldown = 60;
+
+    sZopEyeCycleFromRoar = true;
+    sZopBarrageCooldown = 120;
+
+    // Out of patience: she backs off, climbs the nearest wall and starts shooting
+    BossGoma_SetupFloorMain(this);
+    this->patienceTimer = 0;
+}
+
 static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
     s16 elapsed = BOSSGOMA_PHASE2_ROAR_FRAMES - this->framesUntilNextAction;
@@ -380,72 +457,154 @@ static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
         Math_ApproachF(&this->subCameraAt.y, this->actor.focus.pos.y, 0.3f, 40.0f);
         Math_ApproachF(&this->subCameraAt.z, this->actor.focus.pos.z, 0.3f, 40.0f);
     } else {
-        // Shot 3: hard cut to Link's face, he flinches in shock. Telephoto: far away with a narrow field of view
-        Vec3f* head = &player->bodyPartsPos[PLAYER_BODYPART_HEAD];
-        s16 linkYaw = Math_Vec3f_Yaw(&player->actor.world.pos, &this->actor.world.pos);
-
-        if (elapsed == BOSSGOMA_PHASE2_LINK_SHOT_FRAME) {
-            player->actor.shape.rot.y = player->actor.world.rot.y = player->yaw = linkYaw;
-            // One startled step back: the backstep hop, plus his "surprised" voice
-            LinkAnimation_Change(play, &player->skelAnime, (LinkAnimationHeader*)gPlayerAnim_link_normal_backspace,
-                                 1.0f, 0.0f, Animation_GetLastFrame(gPlayerAnim_link_normal_backspace),
-                                 ANIMMODE_ONCE, -3.0f);
-            Audio_PlayActorSound2(&player->actor, LINK_IS_ADULT ? NA_SE_VO_LI_SURPRISE : NA_SE_VO_LI_SURPRISE_KID);
-            Play_CameraSetFov(play, this->subCameraId, 16.0f);
-            // The boss music kicks back in with Link's startle
-            Audio_QueueSeqCmd(SEQ_PLAYER_BGM_MAIN << 24 | NA_BGM_BOSS);
-        }
-        if (elapsed < BOSSGOMA_PHASE2_LINK_SHOT_FRAME + 7) {
-            // Slide back about 20 units along the step
-            player->actor.world.pos.x -= Math_SinS(linkYaw) * 3.0f;
-            player->actor.world.pos.z -= Math_CosS(linkYaw) * 3.0f;
-        }
-        player->actor.shape.face = 7; // wide eyes, grimacing mouth (PLAYER_FACE_SURPRISED in the decomp)
-
-        this->subCameraEye.x = head->x + Math_SinS(linkYaw) * 180.0f + Math_SinS(linkYaw + 0x4000) * 40.0f;
-        this->subCameraEye.y = head->y + 6.0f;
-        this->subCameraEye.z = head->z + Math_CosS(linkYaw) * 180.0f + Math_CosS(linkYaw + 0x4000) * 40.0f;
-        this->subCameraAt.x = head->x;
-        this->subCameraAt.y = head->y + 1.0f;
-        this->subCameraAt.z = head->z;
+        // Shot 3: hard cut to Link's face, he flinches in shock
+        BossGoma_CsLinkStartle(this, play, elapsed - BOSSGOMA_PHASE2_LINK_SHOT_FRAME);
     }
     Play_CameraSetAtEye(play, this->subCameraId, &this->subCameraAt, &this->subCameraEye);
 
     if (this->framesUntilNextAction == 0) {
-        Camera* cam = Play_GetCamera(play, 0);
-        // Hand back a camera behind Link, looking at Gohma
-        s16 toGohma = Math_Vec3f_Yaw(&player->actor.world.pos, &this->actor.world.pos);
-        Vec3f eye;
-        Vec3f at;
+        BossGoma_EndPhase2Cutscene(this, play);
+    }
+}
 
-        eye.x = player->actor.world.pos.x - Math_SinS(toGohma) * 200.0f;
-        eye.y = player->actor.world.pos.y + 80.0f;
-        eye.z = player->actor.world.pos.z - Math_CosS(toGohma) * 200.0f;
-        at.x = (player->actor.world.pos.x + this->actor.focus.pos.x) * 0.5f;
-        at.y = (player->actor.world.pos.y + 40.0f + this->actor.focus.pos.y) * 0.5f;
-        at.z = (player->actor.world.pos.z + this->actor.focus.pos.z) * 0.5f;
-        player->actor.shape.rot.y = player->actor.world.rot.y = player->yaw = toGohma;
-        cam->eye = eye;
-        cam->eyeNext = eye;
-        cam->at = at;
-        this->subCameraEye = eye;
-        this->subCameraAt = at;
-        play->manualCamera = false;
-        func_800C08AC(play, this->subCameraId, 0);
-        this->subCameraId = 0;
-        func_80064534(play, &play->csCtx);
-        Player_SetCsActionWithHaltedActors(play, &this->actor, 7);
-        BossGoma_SetHaze(play, 0.0f);
-        this->disableGameplayLogic = false;
-        this->invincibilityFrames = 10;
-        sZopFloorShootCooldown = 60;
+// Phase 2 intro, alternative (gZOP.Difficulty.Phase2Intro = 1): she collapses as if beaten, the room goes quiet, then
+// her eye snaps open, Link startles, and she rises again (her death animation played backwards) and screams.
+#define BOSSGOMA_FD_EYE_SHOT 88
+#define BOSSGOMA_FD_EYE_OPEN 100
+#define BOSSGOMA_FD_LINK_SHOT 114
+#define BOSSGOMA_FD_RISE 126
+#define BOSSGOMA_FD_RISE_SPEED 1.6f
+#define BOSSGOMA_FD_SCREAM_FRAMES 34
+static s16 sZopFdElapsed;
+static Vec3f sZopEyeAheadPos; // a point straight in front of her eye (BossGoma_PostLimbDraw)
+static s16 sZopFdRiseFrames;
 
-        sZopEyeCycleFromRoar = true;
-        sZopBarrageCooldown = 120;
+static void BossGoma_SetupPhase2FakeDeath(BossGoma* this, PlayState* play) {
+    Camera* camera = Play_GetCamera(play, 0);
 
-        // Out of patience: she backs off, climbs the nearest wall and starts shooting
-        BossGoma_SetupFloorMain(this);
-        this->patienceTimer = 0;
+    Animation_Change(&this->skelanime, &gGohmaDeathAnim, 1.0f, 0.0f, Animation_GetLastFrame(&gGohmaDeathAnim),
+                     ANIMMODE_ONCE, -2.0f);
+    this->actionFunc = BossGoma_Phase2FakeDeath;
+    this->disableGameplayLogic = true;
+    this->actor.speedXZ = 0.0f;
+    sZopFdElapsed = 0;
+    sZopFdRiseFrames = (s16)(Animation_GetLastFrame(&gGohmaDeathAnim) / BOSSGOMA_FD_RISE_SPEED) + 1;
+    ZOP_StopGohmaLasers(play);
+
+    func_80064520(play, &play->csCtx);
+    Player_SetCsActionWithHaltedActors(play, &this->actor, 1);
+    this->subCameraId = Play_CreateSubCamera(play);
+    Play_ChangeCameraStatus(play, 0, 3);
+    Play_ChangeCameraStatus(play, this->subCameraId, 7);
+    this->subCameraEye = camera->eye;
+    this->subCameraAt = camera->at;
+    sZopRoarCamAngle = Math_Vec3f_Yaw(&this->actor.world.pos, &camera->eye);
+
+    // As if the fight were over: the music stops, her death cry
+    Audio_QueueSeqCmd(0x1 << 28 | SEQ_PLAYER_BGM_MAIN << 24 | 0x100FF);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_DEAD);
+}
+
+static void BossGoma_Phase2FakeDeath(BossGoma* this, PlayState* play) {
+    s16 e = sZopFdElapsed++;
+    s16 riseEnd = BOSSGOMA_FD_RISE + sZopFdRiseFrames;
+    s16 yaw = this->actor.shape.rot.y;
+
+    SkelAnime_Update(&this->skelanime);
+    this->eyeState = EYESTATE_IRIS_NO_FOLLOW_NO_IFRAMES;
+
+    if (e < BOSSGOMA_FD_EYE_SHOT) {
+        // Shot 1: from the side she slumps down; the eye slowly closes, then nothing moves
+        f32 dist = (e < 40) ? 300.0f : 300.0f - (e - 40) * 1.6f;
+
+        if (e == 18) {
+            Actor_RequestQuakeAndRumble(&this->actor, play, 6, 10);
+        }
+        if (e >= 8) {
+            Math_ApproachS(&this->eyeLidBottomRotX, -0xA98, 1, 0x200);
+            Math_ApproachS(&this->eyeLidTopRotX, 0x1600, 1, 0x300);
+        }
+        Math_ApproachF(&this->eyeIrisScaleX, 0.6f, 0.2f, 0.05f);
+        Math_ApproachF(&this->eyeIrisScaleY, 0.6f, 0.2f, 0.05f);
+        Math_ApproachF(&this->subCameraEye.x, this->actor.world.pos.x + Math_SinS(yaw + 0x5000) * dist, 0.2f, 40.0f);
+        Math_ApproachF(&this->subCameraEye.y, this->actor.world.pos.y + 90.0f, 0.2f, 20.0f);
+        Math_ApproachF(&this->subCameraEye.z, this->actor.world.pos.z + Math_CosS(yaw + 0x5000) * dist, 0.2f, 40.0f);
+        Math_ApproachF(&this->subCameraAt.x, this->actor.world.pos.x, 0.2f, 30.0f);
+        Math_ApproachF(&this->subCameraAt.y, this->actor.world.pos.y + 40.0f, 0.2f, 30.0f);
+        Math_ApproachF(&this->subCameraAt.z, this->actor.world.pos.z, 0.2f, 30.0f);
+    } else if (e < BOSSGOMA_FD_LINK_SHOT) {
+        // Shot 2: close-up of the shut eye ... which suddenly snaps wide open
+        if (e == BOSSGOMA_FD_EYE_SHOT) {
+            this->eyeLidBottomRotX = -0xA98;
+            this->eyeLidTopRotX = 0x1600;
+            Play_CameraSetFov(play, this->subCameraId, 38.0f);
+        }
+        if (e >= BOSSGOMA_FD_EYE_OPEN) {
+            if (e == BOSSGOMA_FD_EYE_OPEN) {
+                Audio_PlayActorSound2(&this->actor, NA_SE_EV_DIAMOND_SWITCH);
+                sZopEyeFlashTimer = BOSSGOMA_EYE_FLASH_FRAMES;
+                this->eyeIrisScaleX = this->eyeIrisScaleY = 1.6f;
+            }
+            Math_ApproachS(&this->eyeLidBottomRotX, BOSSGOMA_EYE_LID_BOTTOM_WIDE, 1, 0x1400);
+            Math_ApproachS(&this->eyeLidTopRotX, BOSSGOMA_EYE_LID_TOP_WIDE, 1, 0x1000);
+            Math_ApproachF(&this->eyeIrisScaleX, 1.2f, 0.3f, 0.1f);
+            Math_ApproachF(&this->eyeIrisScaleY, 1.2f, 0.3f, 0.1f);
+        }
+        {
+            // Straight in front of the eye, wherever it points as she lies there
+            Vec3f ahead;
+            f32 len;
+
+            Math_Vec3f_Diff(&sZopEyeAheadPos, &this->actor.focus.pos, &ahead);
+            len = sqrtf(SQ(ahead.x) + SQ(ahead.y) + SQ(ahead.z));
+            if (len < 1.0f) {
+                ahead.x = Math_SinS(yaw);
+                ahead.y = 0.0f;
+                ahead.z = Math_CosS(yaw);
+                len = 1.0f;
+            }
+            this->subCameraEye.x = this->actor.focus.pos.x + ahead.x / len * 130.0f;
+            this->subCameraEye.y = this->actor.focus.pos.y + ahead.y / len * 130.0f + 12.0f;
+            this->subCameraEye.z = this->actor.focus.pos.z + ahead.z / len * 130.0f;
+            this->subCameraAt = this->actor.focus.pos;
+        }
+    } else if (e < BOSSGOMA_FD_RISE) {
+        // Shot 3: Link startles
+        BossGoma_CsLinkStartle(this, play, e - BOSSGOMA_FD_LINK_SHOT);
+    } else {
+        // Shot 4: low and in front of her: she rises (death animation backwards), turns red, screams
+        if (e == BOSSGOMA_FD_RISE) {
+            Animation_Change(&this->skelanime, &gGohmaDeathAnim, -BOSSGOMA_FD_RISE_SPEED,
+                             Animation_GetLastFrame(&gGohmaDeathAnim), 0.0f, ANIMMODE_ONCE, 0.0f);
+            Play_CameraSetFov(play, this->subCameraId, 60.0f);
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_CRY1);
+        }
+        if (e == riseEnd) {
+            Animation_Change(&this->skelanime, &gGohmaStandAnim, 1.0f, 0.0f, Animation_GetLastFrame(&gGohmaStandAnim),
+                             ANIMMODE_LOOP, -6.0f);
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_CRY2);
+            Actor_RequestQuakeAndRumble(&this->actor, play, 12, 20);
+        }
+        if (e >= riseEnd) {
+            // Eye wide open and twitching while she screams
+            Math_ApproachF(&this->eyeIrisScaleX, 1.3f + 0.25f * Math_SinS(e * 0x1800), 0.5f, 0.3f);
+            Math_ApproachF(&this->eyeIrisScaleY, 1.3f + 0.25f * Math_CosS(e * 0x1500), 0.5f, 0.3f);
+            this->visualState = VISUALSTATE_RED;
+        }
+        BossGoma_SetHaze(play, CLAMP((f32)(e - BOSSGOMA_FD_RISE) / 20.0f, 0.0f, 1.0f) *
+                                   CLAMP((f32)(riseEnd + BOSSGOMA_FD_SCREAM_FRAMES - e) / 12.0f, 0.0f, 1.0f));
+
+        this->subCameraEye.x = this->actor.world.pos.x + Math_SinS(yaw + 0x1000) * 330.0f;
+        this->subCameraEye.y = this->actor.world.pos.y + 25.0f;
+        this->subCameraEye.z = this->actor.world.pos.z + Math_CosS(yaw + 0x1000) * 330.0f;
+        Math_ApproachF(&this->subCameraAt.x, this->actor.focus.pos.x, 0.3f, 40.0f);
+        Math_ApproachF(&this->subCameraAt.y, this->actor.focus.pos.y, 0.3f, 40.0f);
+        Math_ApproachF(&this->subCameraAt.z, this->actor.focus.pos.z, 0.3f, 40.0f);
+    }
+    Play_CameraSetAtEye(play, this->subCameraId, &this->subCameraAt, &this->subCameraEye);
+
+    if (e >= riseEnd + BOSSGOMA_FD_SCREAM_FRAMES) {
+        BossGoma_EndPhase2Cutscene(this, play);
     }
 }
 
@@ -2547,7 +2706,11 @@ void BossGoma_UpdateHit(BossGoma* this, PlayState* play) {
 
                     if (!sZopPhase2Announced && BossGoma_InPhase2(this)) {
                         sZopPhase2Announced = true;
-                        BossGoma_SetupPhase2Slam(this);
+                        if (ZOP_Phase2IntroStyle() == 1) {
+                            BossGoma_SetupPhase2FakeDeath(this, play);
+                        } else {
+                            BossGoma_SetupPhase2Slam(this);
+                        }
                     } else {
                         BossGoma_SetupFloorDamaged(this);
                     }
@@ -2695,7 +2858,26 @@ void BossGoma_Update(Actor* thisx, PlayState* play) {
     BossGoma* this = (BossGoma*)thisx;
     s32 pad;
 
-    if (ZOP_TestGohmaEye()) {
+    // Testing aid 2: Gohma stands in front of Link at half health and plays the fake death phase 2 intro right away
+    if (ZOP_TestGohmaEye() == 2) {
+        static u8 sZopFdTestStarted = false;
+
+        if (this->actionFunc == BossGoma_Encounter || !sZopFdTestStarted) {
+            Player* player = GET_PLAYER(play);
+
+            sZopFdTestStarted = true;
+            this->actor.world.pos.x = player->actor.world.pos.x + Math_SinS(player->actor.shape.rot.y) * 300.0f;
+            this->actor.world.pos.z = player->actor.world.pos.z + Math_CosS(player->actor.shape.rot.y) * 300.0f;
+            this->actor.world.pos.y = player->actor.world.pos.y;
+            this->actor.shape.rot.x = 0;
+            this->actor.shape.rot.y = this->actor.world.rot.y = player->actor.shape.rot.y + 0x8000;
+            this->actor.flags |= ACTOR_FLAG_ATTENTION_ENABLED;
+            this->actor.gravity = -2.0f;
+            this->actor.colChkInfo.health = (u8)CLAMP_MIN(this->actor.colChkInfo.health / 2, 1);
+            sZopPhase2Announced = true;
+            BossGoma_SetupPhase2FakeDeath(this, play);
+        }
+    } else if (ZOP_TestGohmaEye()) {
         if (this->actionFunc != BossGoma_ZopEyeTest) {
             Animation_Change(&this->skelanime, &gGohmaStandAnim, 1.0f, 0.0f, Animation_GetLastFrame(&gGohmaStandAnim),
                              ANIMMODE_LOOP, 0.0f);
@@ -2918,6 +3100,11 @@ void BossGoma_PostLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3s* r
         Matrix_MultVec3f(&tailZero, &this->firstTailLimbWorldPos);
     } else if (limbIndex == BOSSGOMA_LIMB_EYE) {
         Matrix_MultVec3f(&focusEyeLocalPos, &this->actor.focus.pos);
+        // Where the eye looks (its local +Z), for cutscene shots of the eye whatever pose she is in
+        {
+            static Vec3f eyeAheadLocalPos = { 0.0f, 300.0f, 6650.0f };
+            Matrix_MultVec3f(&eyeAheadLocalPos, &sZopEyeAheadPos);
+        }
     } else if (limbIndex == BOSSGOMA_LIMB_R_FEET_BACK) {
         Matrix_MultVec3f(&clawBackLocalPos, &this->rightHandBackLimbWorldPos);
     } else if (limbIndex == BOSSGOMA_LIMB_L_FEET_BACK) {
@@ -3001,7 +3188,10 @@ void BossGoma_Draw(Actor* thisx, PlayState* play) {
 
         if (sZopPhase2Announced && (this->actionFunc != BossGoma_Phase2Slam || sZopSlamIntoBarrage)) {
             recolor = 1.0f;
-            if (this->actionFunc == BossGoma_Phase2Roar) {
+            if (this->actionFunc == BossGoma_Phase2FakeDeath) {
+                // Normal colors while she lies there, red as she rises
+                recolor = CLAMP((f32)(sZopFdElapsed - BOSSGOMA_FD_RISE) / sZopFdRiseFrames, 0.0f, 1.0f);
+            } else if (this->actionFunc == BossGoma_Phase2Roar) {
                 recolor = (f32)(BOSSGOMA_PHASE2_ROAR_FRAMES - this->framesUntilNextAction) /
                           BOSSGOMA_PHASE2_EYE_SHOT_FRAME;
                 recolor = CLAMP_MAX(recolor, 1.0f);
@@ -3044,7 +3234,7 @@ void BossGoma_Draw(Actor* thisx, PlayState* play) {
     // Health bar: dark frame, white chip for recent damage, red fill (orange-red in phase 2) and a notch where the
     // second phase starts. Hidden during the intro, the phase 2 cutscene and her death.
     if (sZopBarMaxHealth > 0 && this->actionFunc != BossGoma_Encounter && this->actionFunc != BossGoma_Defeated &&
-        this->actionFunc != BossGoma_Phase2Roar) {
+        this->actionFunc != BossGoma_Phase2Roar && this->actionFunc != BossGoma_Phase2FakeDeath) {
         s32 width = BOSSGOMA_BAR_RIGHT - BOSSGOMA_BAR_LEFT;
         s32 fillX = BOSSGOMA_BAR_LEFT + (s32)(width * CLAMP(sZopBarShown / sZopBarMaxHealth, 0.0f, 1.0f));
         s32 chipX = BOSSGOMA_BAR_LEFT + (s32)(width * CLAMP(sZopBarChip / sZopBarMaxHealth, 0.0f, 1.0f));

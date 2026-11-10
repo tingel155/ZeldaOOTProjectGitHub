@@ -76,6 +76,11 @@ extern "C" float ZOP_BossPhase2At(void) {
     return CVarGetFloat(CVAR_ZOP_DIFFICULTY("Phase2At"), 0.5f);
 }
 
+// Phase 2 intro cutscene: 0 = floor slam and roar, 1 = fake death and rising again (default)
+extern "C" int ZOP_Phase2IntroStyle(void) {
+    return CVarGetInteger(CVAR_ZOP_DIFFICULTY("Phase2Intro"), 1);
+}
+
 extern "C" int ZOP_TestPhase2Intro(void) {
     return CVAR_DIFFICULTY_VALUE && CVarGetInteger(CVAR_ZOP_DIFFICULTY("TestPhase2Intro"), 0);
 }
