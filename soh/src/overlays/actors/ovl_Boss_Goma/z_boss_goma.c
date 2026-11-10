@@ -94,6 +94,14 @@ static s16 sZopEyeCycleTimer;
 static s16 sZopEyeClosedFrames; // how long the eye has been shut, so short blinks don't chime
 #define BOSSGOMA_EYE_CHIME_MIN_CLOSED 15
 
+// How long the eye has been open; phase 2 floor salvos wait until it has been open for a moment
+static s16 sZopEyeOpenFrames;
+#define BOSSGOMA_SHOOT_DELAY_AFTER_OPEN 20
+
+// Phase 2: lid offsets for a wide open eye (the animations' own pose is half shut)
+#define BOSSGOMA_EYE_LID_BOTTOM_WIDE 0x380
+#define BOSSGOMA_EYE_LID_TOP_WIDE (-0x600)
+
 // Flash of light on the eye when it opens (frames left)
 static s16 sZopEyeFlashTimer;
 #define BOSSGOMA_EYE_FLASH_FRAMES 12
@@ -250,8 +258,8 @@ static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
                 Audio_PlayActorSound2(&this->actor, NA_SE_EV_DIAMOND_SWITCH);
                 sZopEyeFlashTimer = BOSSGOMA_EYE_FLASH_FRAMES;
             }
-            Math_ApproachS(&this->eyeLidBottomRotX, 0, 1, 0x380);
-            Math_ApproachS(&this->eyeLidTopRotX, 0, 1, 0x600);
+            Math_ApproachS(&this->eyeLidBottomRotX, BOSSGOMA_EYE_LID_BOTTOM_WIDE, 1, 0x400);
+            Math_ApproachS(&this->eyeLidTopRotX, BOSSGOMA_EYE_LID_TOP_WIDE, 1, 0x700);
         }
 
         // In front of the eye, a little below it, slowly pushing in
@@ -350,6 +358,12 @@ static void BossGoma_Phase2FloorShoot(BossGoma* this, PlayState* play) {
     Math_ApproachZeroF(&this->actor.speedXZ, 0.5f, 2.0f);
     Math_ApproachS(&this->actor.shape.rot.x, 0, 2, 0xBB8);
     Math_ApproachS(&this->actor.world.rot.y, this->actor.yawTowardsPlayer, 4, 0x5DC);
+
+    // The first shot waits until her eye has been open for a moment, so stunning her right after it opens works
+    if (elapsed == 4 && sZopEyeOpenFrames < BOSSGOMA_SHOOT_DELAY_AFTER_OPEN) {
+        this->framesUntilNextAction++;
+        elapsed--;
+    }
 
     if (elapsed == 4) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_CRY1);
@@ -667,6 +681,7 @@ void BossGoma_Init(Actor* thisx, PlayState* play) {
     sZopEyeCycleTimer = 60;
     sZopEyeClosedFrames = 0;
     sZopEyeFlashTimer = 0;
+    sZopEyeOpenFrames = 0;
     // Undo a recolor left over from an earlier fight; the texture cache is flushed on the next draw
     ZOP_GohmaSetRecolor(0.0f);
     sZopRecolorDirty = true;
@@ -2156,9 +2171,9 @@ void BossGoma_UpdateEye(BossGoma* this, PlayState* play) {
             }
         }
 
-        // Phase 2: while her laser is out the eye is fully open and hittable, also on the ceiling (no blinking
-        // either). The open/shut cycle starts over with an open stretch.
-        if (sZopPhase2Announced && ZOP_GohmaLaserActive(play)) {
+        // Phase 2: while her laser is out (also on the ceiling) and while she shoots from the floor the eye is fully
+        // open and hittable, no blinking either. The open/shut cycle starts over with an open stretch.
+        if (sZopPhase2Announced && (ZOP_GohmaLaserActive(play) || this->actionFunc == BossGoma_Phase2FloorShoot)) {
             this->eyeClosedTimer = 0;
             if (sZopEyeCycleClosed || sZopEyeCycleTimer < 24) {
                 sZopEyeCycleClosed = false;
@@ -2171,6 +2186,7 @@ void BossGoma_UpdateEye(BossGoma* this, PlayState* play) {
             if (sZopEyeClosedFrames < 0x7FFF) {
                 sZopEyeClosedFrames++;
             }
+            sZopEyeOpenFrames = 0;
             // close eye
             Math_ApproachS(&this->eyeLidBottomRotX, -0xA98, 1, 0x7D0);
             Math_ApproachS(&this->eyeLidTopRotX, 0x1600, 1, 0x7D0);
@@ -2182,9 +2198,12 @@ void BossGoma_UpdateEye(BossGoma* this, PlayState* play) {
                 sZopEyeFlashTimer = BOSSGOMA_EYE_FLASH_FRAMES;
             }
             sZopEyeClosedFrames = 0;
-            // open eye
-            Math_ApproachS(&this->eyeLidBottomRotX, 0, 1, 0x7D0);
-            Math_ApproachS(&this->eyeLidTopRotX, 0, 1, 0x7D0);
+            if (sZopEyeOpenFrames < 0x7FFF) {
+                sZopEyeOpenFrames++;
+            }
+            // open eye (phase 2: wide open, so an open eye is unmistakable)
+            Math_ApproachS(&this->eyeLidBottomRotX, sZopPhase2Announced ? BOSSGOMA_EYE_LID_BOTTOM_WIDE : 0, 1, 0x7D0);
+            Math_ApproachS(&this->eyeLidTopRotX, sZopPhase2Announced ? BOSSGOMA_EYE_LID_TOP_WIDE : 0, 1, 0x7D0);
         }
 
         if (this->eyeState != EYESTATE_IRIS_NO_FOLLOW_NO_IFRAMES) {
