@@ -41,6 +41,7 @@
 #define ZOP_SOUND_FRAMES fwork[FHGFIRE_WARP_TEX_SPEED]
 #define ZOP_SOUND_FREQ fwork[FHGFIRE_WARP_ALPHA]
 #define ZOP_SOUND_LENGTH 16
+#define ZOP_GND_RALLY_SOUND 0 // rising charge sound on every hit (off for now)
 
 /**
  * ZeldaOOTProject: one more hit in a rally. The Mirror Shield charge sound (Twinrova fight), rising in level and pitch
@@ -54,7 +55,7 @@ static void EnFhgFire_ZopRallyHit(EnFhgFire* this, PlayState* play, f32 tx, f32 
     f32 dz = tz - this->actor.world.pos.z;
 
     this->ZOP_SOUND_FREQ = CLAMP_MAX(0.45f + hits * 0.09f, 1.9f);
-    this->ZOP_SOUND_FRAMES = ZOP_SOUND_LENGTH;
+    this->ZOP_SOUND_FRAMES = ZOP_GND_RALLY_SOUND ? ZOP_SOUND_LENGTH : 0.0f;
 
     // Late in a rally every hit gets more violent: from the 5th hit sparks of the ball fly off into the dark, from the
     // 7th lightning bolts lash out in all directions, with thunder, and rain starts; both grow with the rally
