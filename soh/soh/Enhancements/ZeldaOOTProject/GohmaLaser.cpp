@@ -49,8 +49,8 @@ struct GohmaLaser {
 };
 
 // The room takes on the beam's color while a laser fires: added to the ambient light and the fog
-constexpr float kGlowAmbient[3] = { 60.0f, 14.0f, 24.0f };
-constexpr float kGlowFog[3] = { 85.0f, 20.0f, 35.0f };
+constexpr float kGlowAmbient[3] = { 110.0f, 26.0f, 44.0f };
+constexpr float kGlowFog[3] = { 150.0f, 36.0f, 60.0f };
 float sRoomGlow = 0.0f;
 bool sRoomGlowApplied = false;
 
@@ -317,9 +317,14 @@ static void LaserFrameTick() {
 
     if (sRoomGlow > 0.0f || sRoomGlowApplied) {
         EnvironmentContext* env = &gPlayState->envCtx;
+        // Unsteady like the beam itself: a fast jitter plus a slower pulse, never fully dark
+        u32 f = gPlayState->gameplayFrames;
+        float flicker = 0.7f + 0.2f * sinf(f * 1.9f) + 0.1f * sinf(f * 0.55f) + Rand_CenteredFloat(0.25f);
+        flicker = std::clamp(flicker, 0.35f, 1.15f);
+        float glow = sRoomGlow * flicker;
         for (int i = 0; i < 3; i++) {
-            env->adjAmbientColor[i] = (s16)(kGlowAmbient[i] * sRoomGlow);
-            env->adjFogColor[i] = (s16)(kGlowFog[i] * sRoomGlow);
+            env->adjAmbientColor[i] = (s16)(kGlowAmbient[i] * glow);
+            env->adjFogColor[i] = (s16)(kGlowFog[i] * glow);
         }
         sRoomGlowApplied = sRoomGlow > 0.0f;
     }
