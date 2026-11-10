@@ -43,8 +43,6 @@ void ZOP_SpawnGohmaLaserTimed(struct PlayState* play, void* shooter, int fireFra
 void ZOP_StopGohmaLasers(struct PlayState* play);
 int ZOP_IsGohmaLaser(short actorId);
 int ZOP_GohmaLaserActive(struct PlayState* play);
-// z_boss_goma.c: where Gohma's laser starts (the tip of her tail); boss is the BossGoma actor, out a Vec3f*
-void ZOP_GohmaLaserOrigin(void* boss, void* out);
 
 // z_player.c / z_en_elf.c: nonzero when Navi always flies next to Link and the A button no longer calls her in or
 // out (ModernControls.cpp)

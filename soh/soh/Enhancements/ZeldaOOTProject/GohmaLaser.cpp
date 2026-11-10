@@ -1,6 +1,6 @@
 // Gohma phase 2: tracking laser.
 //
-// Fired from the tip of Gohma's tail (other shooters: their focus point). It aims first (thin flickering line, Beamos aim sound),
+// Fired from Gohma's eye (the spawning actor's focus point); her eye may only be a slit while she fires. It aims first (thin flickering line, Beamos aim sound),
 // then fires: the beam's impact point starts a bit in front of Link and crawls toward him slower than he can run, so
 // it can be outrun or side-stepped. The damaging part is the impact point on the floor/wall.
 
@@ -65,16 +65,8 @@ V3 MoveToward(V3 from, V3 to, float step) {
 }
 
 void UpdateOrigin(GohmaLaser* self) {
-    Actor* parent = self->actor.parent;
-    if (parent != nullptr && parent->update != nullptr) {
-        if (parent->id == ACTOR_BOSS_GOMA) {
-            // Gohma fires from her tail, so her eye can stay shut while she lasers
-            Vec3f tail;
-            ZOP_GohmaLaserOrigin(parent, &tail);
-            self->origin = ToV3(tail);
-        } else {
-            self->origin = ToV3(parent->focus.pos);
-        }
+    if (self->actor.parent != nullptr && self->actor.parent->update != nullptr) {
+        self->origin = ToV3(self->actor.parent->focus.pos);
     }
 }
 

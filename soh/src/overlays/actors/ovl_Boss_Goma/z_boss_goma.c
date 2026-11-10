@@ -102,6 +102,9 @@ static s16 sZopEyeOpenFrames;
 // Lid offsets for a wide open eye: in the stand pose the bottom lid covers half the eye (checked on screenshots)
 #define BOSSGOMA_EYE_LID_BOTTOM_WIDE 0x1400
 #define BOSSGOMA_EYE_LID_TOP_WIDE (-0x300)
+// Narrow slit: the eye is shut for hits, but the laser can come out of it
+#define BOSSGOMA_EYE_LID_BOTTOM_SLIT (-0x700)
+#define BOSSGOMA_EYE_LID_TOP_SLIT 0x1000
 
 // Phase 2 floor cycle: entering it (after the ceiling, a stun...) starts with the eye shut, except right after the
 // intro cutscene, which ends on the eye opening
@@ -622,8 +625,8 @@ static void BossGoma_Phase2FloorShoot(BossGoma* this, PlayState* play) {
     Math_ApproachS(&this->actor.shape.rot.x, 0, 2, 0xBB8);
     Math_ApproachS(&this->actor.world.rot.y, this->actor.yawTowardsPlayer, 4, 0x5DC);
 
-    // If her eye has just opened, the first shot waits a moment, so stunning her right after it opens works. The laser
-    // comes from her tail, so the eye keeps its usual open/shut rhythm while she shoots.
+    // If her eye has just opened, the first shot waits a moment, so stunning her right after it opens works. The eye
+    // keeps its usual open/shut rhythm while she shoots; while it is shut the laser comes out of a narrow slit.
     if (elapsed == 4 && sZopEyeOpenFrames > 0 && sZopEyeOpenFrames < BOSSGOMA_SHOOT_DELAY_AFTER_OPEN) {
         this->framesUntilNextAction++;
         elapsed--;
@@ -730,15 +733,6 @@ static void BossGoma_Phase2Barrage(BossGoma* this, PlayState* play) {
         BossGoma_SetupFloorMain(this);
         this->patienceTimer = 120;
     }
-}
-
-/**
- * Phase 2 lasers come out of the tip of her tail (GohmaLaser.cpp), not her eye
- */
-void ZOP_GohmaLaserOrigin(void* boss, void* out) {
-    BossGoma* this = (BossGoma*)boss;
-
-    *(Vec3f*)out = this->lastTailLimbWorldPos;
 }
 
 static s32 BossGoma_LidsFollowAnim(BossGoma* this) {
@@ -2589,9 +2583,15 @@ void BossGoma_UpdateEye(BossGoma* this, PlayState* play) {
                 sZopEyeClosedFrames++;
             }
             sZopEyeOpenFrames = 0;
-            // close eye
-            Math_ApproachS(&this->eyeLidBottomRotX, -0xA98, 1, 0xC00);
-            Math_ApproachS(&this->eyeLidTopRotX, 0x1600, 1, 0x7D0);
+            // close eye; while her laser is out it stays a narrow glowing slit the beam comes out of (still shut for
+            // hits, only an open eye can be hit)
+            if (sZopPhase2Announced && ZOP_GohmaLaserActive(play)) {
+                Math_ApproachS(&this->eyeLidBottomRotX, BOSSGOMA_EYE_LID_BOTTOM_SLIT, 1, 0xC00);
+                Math_ApproachS(&this->eyeLidTopRotX, BOSSGOMA_EYE_LID_TOP_SLIT, 1, 0x7D0);
+            } else {
+                Math_ApproachS(&this->eyeLidBottomRotX, -0xA98, 1, 0xC00);
+                Math_ApproachS(&this->eyeLidTopRotX, 0x1600, 1, 0x7D0);
+            }
         } else {
             // Phase 2: a crystal switch chime tells that the eye is open (and hittable) again
             if (sZopPhase2Announced &&
@@ -2784,7 +2784,7 @@ static void BossGoma_SetTouch(BossGoma* this, s32 element, s32 on) {
 // Testing aid (gZOP.TestEnv.GohmaEyeTest): Gohma stands in front of Link in her stand pose; every 5 s the eyelids
 // switch to the next pose of the table (offsets added to the animation, bottom / top)
 static const s16 sZopEyeTestPoses[][2] = {
-    { 0, 0 }, { -0xA98, 0x1600 }, { BOSSGOMA_EYE_LID_BOTTOM_WIDE, BOSSGOMA_EYE_LID_TOP_WIDE },
+    { 0, 0 }, { -0xA98, 0x1600 }, { BOSSGOMA_EYE_LID_BOTTOM_SLIT, BOSSGOMA_EYE_LID_TOP_SLIT }, { -0x500, 0x0C00 },
 };
 static s16 sZopEyeTestFrames;
 
