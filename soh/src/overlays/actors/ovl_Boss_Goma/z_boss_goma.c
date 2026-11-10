@@ -508,7 +508,10 @@ static void BossGoma_Phase2FakeDeath(BossGoma* this, PlayState* play) {
         // Shot 1: from the side she slumps down; the eye slowly closes, then nothing moves
         f32 dist = (e < 40) ? 300.0f : CLAMP_MIN(300.0f - (e - 40) * 1.2f, 190.0f);
 
-        if (e == 18) {
+        // She hits the floor: same dust, thud and rumble as in her real death (BossGoma_Defeated)
+        if (Animation_OnFrame(&this->skelanime, 107.0f)) {
+            BossGoma_PlayEffectsAndSfx(this, play, 0, 8);
+            func_800A9F6C(0.0f, 0x96, 0x14, 0x14);
             Actor_RequestQuakeAndRumble(&this->actor, play, 6, 10);
         }
         if (e >= 8) {

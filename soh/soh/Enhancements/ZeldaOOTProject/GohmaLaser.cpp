@@ -6,6 +6,8 @@
 
 #include <libultraship/bridge/consolevariablebridge.h>
 
+#include <algorithm>
+
 #include "soh/ActorDB.h"
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/ShipInit.hpp"
@@ -43,7 +45,14 @@ struct GohmaLaser {
     s16 timer;
     s16 hitCooldown;
     s16 fireFrames; // how long the beam fires (actor params, 0 = kFireFrames)
+    float glow;     // how strongly it lights up the room (0..1)
 };
+
+// The room takes on the beam's color while a laser fires: added to the ambient light and the fog
+constexpr float kGlowAmbient[3] = { 60.0f, 14.0f, 24.0f };
+constexpr float kGlowFog[3] = { 85.0f, 20.0f, 35.0f };
+float sRoomGlow = 0.0f;
+bool sRoomGlowApplied = false;
 
 s16 sLaserActorId = -1;
 
@@ -91,6 +100,7 @@ void GohmaLaser_Init(Actor* thisx, PlayState* play) {
     self->timer = 0;
     self->hitCooldown = 0;
     self->fireFrames = (thisx->params > 0) ? thisx->params : kFireFrames;
+    self->glow = 0.0f;
     self->origin = ToV3(thisx->world.pos);
     UpdateOrigin(self);
 
@@ -125,6 +135,14 @@ void GohmaLaser_Update(Actor* thisx, PlayState* play) {
 
     UpdateOrigin(self);
     bool firing = self->timer > kAimFrames && self->timer <= kAimFrames + self->fireFrames;
+    // A faint tint while aiming, the full glow while firing, fading with the beam
+    if (self->timer <= kAimFrames) {
+        self->glow = 0.2f * self->timer / kAimFrames;
+    } else if (firing) {
+        self->glow = 1.0f;
+    } else {
+        self->glow = 1.0f - (float)(self->timer - kAimFrames - self->fireFrames) / kFadeFrames;
+    }
     self->target = MoveToward(self->target, linkPos, firing ? kTrackSpeed : kAimSpeed);
     UpdateImpact(self, play);
     thisx->world.pos = { self->impact.x, self->impact.y, self->impact.z };
@@ -273,14 +291,37 @@ extern "C" void ZOP_StopGohmaLasers(PlayState* play) {
     }
 }
 
-// Link died: the other actors freeze, so a laser would never reach its end and its beam sound would keep looping
-static void StopLasersOnDeath() {
+// Once per frame (OnPlayerUpdate):
+// - Link died: the other actors freeze, so a laser would never reach its end and its beam sound would keep looping
+// - the room glow follows the strongest laser, eased so it doesn't flicker
+static void LaserFrameTick() {
     if (gPlayState == nullptr) {
         return;
     }
     Player* player = GET_PLAYER(gPlayState);
     if (player != nullptr && ((player->stateFlags1 & PLAYER_STATE1_DEAD) || gSaveContext.health <= 0)) {
         ZOP_StopGohmaLasers(gPlayState);
+    }
+
+    float target = 0.0f;
+    for (Actor* actor = gPlayState->actorCtx.actorLists[ACTORCAT_ITEMACTION].head; actor != nullptr;
+         actor = actor->next) {
+        if (actor->id == sLaserActorId && actor->update != nullptr) {
+            target = std::max(target, ((GohmaLaser*)actor)->glow);
+        }
+    }
+    sRoomGlow += (target - sRoomGlow) * 0.25f;
+    if (target == 0.0f && sRoomGlow < 0.01f) {
+        sRoomGlow = 0.0f;
+    }
+
+    if (sRoomGlow > 0.0f || sRoomGlowApplied) {
+        EnvironmentContext* env = &gPlayState->envCtx;
+        for (int i = 0; i < 3; i++) {
+            env->adjAmbientColor[i] = (s16)(kGlowAmbient[i] * sRoomGlow);
+            env->adjFogColor[i] = (s16)(kGlowFog[i] * sRoomGlow);
+        }
+        sRoomGlowApplied = sRoomGlow > 0.0f;
     }
 }
 
@@ -312,7 +353,7 @@ static void LaserTestTick() {
 
 static void RegisterGohmaLaser() {
     COND_HOOK(OnPlayerUpdate, CVarGetInteger("gZOP.TestEnv.LaserTest", 0), LaserTestTick);
-    COND_HOOK(OnPlayerUpdate, true, StopLasersOnDeath);
+    COND_HOOK(OnPlayerUpdate, true, LaserFrameTick);
 
     if (sLaserActorId < 0) {
         ActorDBInit entry = {};
