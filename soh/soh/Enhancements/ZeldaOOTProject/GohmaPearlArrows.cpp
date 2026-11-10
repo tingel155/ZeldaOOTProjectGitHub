@@ -216,13 +216,22 @@ extern "C" void PearlArrow_Draw(Actor* thisx, PlayState* play) {
 extern "C" void ZOP_SpawnPearlVolley(PlayState* play, void* shooterRef, int count) {
     Actor* shooter = (Actor*)shooterRef;
     Vec3f origin = shooter->focus.pos;
-    s16 yawToPlayer = Actor_WorldYawTowardActor(shooter, &GET_PLAYER(play)->actor);
+    Player* player = GET_PLAYER(play);
+    s16 yawToPlayer = Actor_WorldYawTowardActor(shooter, &player->actor);
 
-    // Fan out to the sides and slightly downward, then the arrows curve in on Link
+    // Launch pitch aims at Link's waist (positive = downward): steeply down from the ceiling, almost level from the
+    // floor, so the arrows no longer dive into the ground before they start homing
+    Vec3f* waist = &player->bodyPartsPos[PLAYER_BODYPART_WAIST];
+    float dx = waist->x - origin.x;
+    float dz = waist->z - origin.z;
+    float drop = origin.y - waist->y;
+    s16 pitchToPlayer = (s16)(atan2f(drop, sqrtf(dx * dx + dz * dz)) * (0x8000 / kPi));
+
+    // Fan out to the sides, then the arrows curve in on Link
     for (int i = 0; i < count; i++) {
         float spread = (count > 1) ? ((float)i / (count - 1) - 0.5f) : 0.0f;
         s16 yaw = (s16)(yawToPlayer + spread * 0x6000 + Rand_CenteredFloat(0x600));
-        s16 pitch = (s16)(0x1000 + Rand_CenteredFloat(0x800));
+        s16 pitch = (s16)(pitchToPlayer - 0x200 + Rand_CenteredFloat(0x500)); // a touch upward, never into the floor
         Actor_Spawn(&play->actorCtx, play, sArrowActorId, origin.x, origin.y, origin.z, pitch, yaw, 0, i);
     }
     SoundSource_PlaySfxAtFixedWorldPos(play, &origin, 20, NA_SE_IT_MAGIC_ARROW_SHOT);

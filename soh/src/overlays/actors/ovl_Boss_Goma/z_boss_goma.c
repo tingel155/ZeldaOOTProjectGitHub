@@ -392,10 +392,24 @@ static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
 
     if (this->framesUntilNextAction == 0) {
         Camera* cam = Play_GetCamera(play, 0);
+        // Hand back a camera behind Link, looking at Gohma
+        s16 toGohma = Math_Vec3f_Yaw(&player->actor.world.pos, &this->actor.world.pos);
+        Vec3f eye;
+        Vec3f at;
 
-        cam->eye = this->subCameraEye;
-        cam->eyeNext = this->subCameraEye;
-        cam->at = this->subCameraAt;
+        eye.x = player->actor.world.pos.x - Math_SinS(toGohma) * 200.0f;
+        eye.y = player->actor.world.pos.y + 80.0f;
+        eye.z = player->actor.world.pos.z - Math_CosS(toGohma) * 200.0f;
+        at.x = (player->actor.world.pos.x + this->actor.focus.pos.x) * 0.5f;
+        at.y = (player->actor.world.pos.y + 40.0f + this->actor.focus.pos.y) * 0.5f;
+        at.z = (player->actor.world.pos.z + this->actor.focus.pos.z) * 0.5f;
+        player->actor.shape.rot.y = player->actor.world.rot.y = player->yaw = toGohma;
+        cam->eye = eye;
+        cam->eyeNext = eye;
+        cam->at = at;
+        this->subCameraEye = eye;
+        this->subCameraAt = at;
+        play->manualCamera = false;
         func_800C08AC(play, this->subCameraId, 0);
         this->subCameraId = 0;
         func_80064534(play, &play->csCtx);
