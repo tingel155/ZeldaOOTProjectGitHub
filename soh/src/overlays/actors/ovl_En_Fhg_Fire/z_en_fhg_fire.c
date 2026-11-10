@@ -640,9 +640,9 @@ static u8 EnFhgFire_ZopBurstBall(EnFhgFire* this, PlayState* play, BossGanondrof
 
     // Closes in on Link
     if (dist > 100.0f) {
-        Math_ApproachS(&this->actor.world.rot.y, (s16)(Math_FAtan2F(dxL, dzL) * (0x8000 / M_PI)), 3, 0x280);
+        Math_ApproachS(&this->actor.world.rot.y, (s16)(Math_FAtan2F(dxL, dzL) * (0x8000 / M_PI)), 3, 0x380);
         Math_ApproachS(&this->actor.world.rot.x,
-                       (s16)(Math_FAtan2F(dyL, sqrtf(SQ(dxL) + SQ(dzL))) * (0x8000 / M_PI)), 3, 0x200);
+                       (s16)(Math_FAtan2F(dyL, sqrtf(SQ(dxL) + SQ(dzL))) * (0x8000 / M_PI)), 3, 0x300);
     }
     if (dist <= 25.0f) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_HIT_THUNDER);
@@ -865,7 +865,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                 this->work[FHGFIRE_FX_TIMER] = 2; // no collision on the way
                 this->actor.world.rot.y = (s16)(Math_FAtan2F(dx, dz) * (0x8000 / M_PI));
                 this->actor.world.rot.x = (s16)(Math_FAtan2F(dy, sqrtf(SQ(dx) + SQ(dz))) * (0x8000 / M_PI));
-                this->actor.speedXZ = CLAMP(d * 0.35f, 3.0f, 14.0f);
+                this->actor.speedXZ = CLAMP(d * 0.6f, 8.0f, 24.0f);
                 if (this->ZOP_ABSORB_START_DIST > 1.0f) {
                     Actor_SetScale(&this->actor,
                                    this->actor.scale.x * CLAMP(d / this->ZOP_ABSORB_START_DIST, 0.2f, 1.0f));

@@ -466,7 +466,7 @@ s32 BossGanondrof_ZopTryCatch(BossGanondrof* this, PlayState* play, s16 rallyHit
     this->actionFunc = BossGanondrof_ZopBurst;
     this->flyMode = GND_FLY_NEUTRAL;
     sZopBurstState = ZOP_BURST_CATCH;
-    sZopBurstTimer = 60; // fallback in case the ball never arrives
+    sZopBurstTimer = 30; // fallback in case the ball never arrives
     sZopBurstCooldown = ZOP_BURST_COOLDOWN;
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_LAUGH);
     return true;
@@ -520,7 +520,7 @@ static void BossGanondrof_ZopExplode(BossGanondrof* this, PlayState* play) {
                                          FHGFIRE_ENERGY_BALL);
 
         if (ball != NULL) {
-            ball->speedXZ = 7.0f;
+            ball->speedXZ = 11.0f;
         }
     }
     this->actor.child = &horse->actor;
