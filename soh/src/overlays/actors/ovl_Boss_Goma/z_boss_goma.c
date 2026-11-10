@@ -110,6 +110,7 @@ static s16 sZopEyeOpenFrames;
 // intro cutscene, which ends on the eye opening
 static u8 sZopEyeWasInCycle;
 static u8 sZopEyeCycleFromRoar;
+static s16 sZopEyeCycleOpenStart; // > 0: entering the cycle opens the eye for this long (with chime) instead of shut
 
 // The animations move the eyelids on their own, so an "open" eye often looked half shut. Instead the lids always
 // start from their pose in the stand animation, plus eyeLidBottomRotX / eyeLidTopRotX.
@@ -722,6 +723,8 @@ static void BossGoma_SetupPhase2Barrage(BossGoma* this) {
     this->actor.speedXZ = 0.0f;
     sZopBarrageShotTimer = 12;
     sZopBarrageShots = 0;
+    // Reward for jumping the shockwave: her eye stays open for a moment (1.5 s), enough for a slingshot or a nut
+    sZopEyeCycleOpenStart = 30;
     sZopBarrageSlamTimer = 0;
     sZopBarrageSlamAnim = false;
 }
@@ -1101,6 +1104,7 @@ void BossGoma_Init(Actor* thisx, PlayState* play) {
     sZopEyeOpenFrames = 0;
     sZopEyeWasInCycle = false;
     sZopEyeCycleFromRoar = false;
+    sZopEyeCycleOpenStart = 0;
     sZopBarrageCooldown = 0;
     sZopSlamIntoBarrage = false;
     sZopWaveAlpha = 0;
@@ -2598,7 +2602,13 @@ void BossGoma_UpdateEye(BossGoma* this, PlayState* play) {
              this->actionFunc == BossGoma_Phase2FloorShoot || this->actionFunc == BossGoma_Phase2Barrage);
 
         if (inCycle && !sZopEyeWasInCycle) {
-            if (sZopEyeCycleFromRoar) {
+            if (sZopEyeCycleOpenStart > 0) {
+                // Reward window (after the barrage shockwave): open at once, with chime and flare
+                sZopEyeCycleClosed = false;
+                sZopEyeCycleTimer = sZopEyeCycleOpenStart;
+                sZopEyeCycleOpenStart = 0;
+                sZopEyeClosedFrames = BOSSGOMA_EYE_CHIME_MIN_CLOSED;
+            } else if (sZopEyeCycleFromRoar) {
                 sZopEyeCycleClosed = false;
                 sZopEyeCycleTimer = 24;
             } else {

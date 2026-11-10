@@ -8200,10 +8200,16 @@ void Player_Action_80840450(Player* this, PlayState* play) {
 
         // ZeldaOOTProject: locked-on movement turns, stops and speeds up as snappily as free running
         if (temp4 > 0x4000) {
-            if (Math_StepToF(&this->linearVelocity, 0.0f, ZOP_PlayerAccel(1.5f))) {
+            if (ZOP_PlayerQuickTurn()) {
+                // ZeldaOOTProject: turn at once instead of stopping first, so direction changes flow
+                this->linearVelocity *= 0.5f;
                 this->yaw = yawTarget;
+            } else {
+                if (Math_StepToF(&this->linearVelocity, 0.0f, ZOP_PlayerAccel(1.5f))) {
+                    this->yaw = yawTarget;
+                }
+                return;
             }
-            return;
         }
 
         Math_AsymStepToF(&this->linearVelocity, speedTarget * 0.3f, ZOP_PlayerAccel(2.0f), 1.5f);
@@ -8509,10 +8515,16 @@ void Player_Action_80840DE4(Player* this, PlayState* play) {
         temp3 = ABS(temp2);
 
         if (temp3 > 0x4000) {
-            if (Math_StepToF(&this->linearVelocity, 0.0f, ZOP_PlayerAccel(1.5f))) {
+            if (ZOP_PlayerQuickTurn()) {
+                // ZeldaOOTProject: turn at once instead of stopping first, so direction changes flow
+                this->linearVelocity *= 0.5f;
                 this->yaw = yawTarget;
+            } else {
+                if (Math_StepToF(&this->linearVelocity, 0.0f, ZOP_PlayerAccel(1.5f))) {
+                    this->yaw = yawTarget;
+                }
+                return;
             }
-            return;
         }
 
         Math_AsymStepToF(&this->linearVelocity, speedTarget * 0.4f, ZOP_PlayerAccel(1.5f), 1.5f);
@@ -8733,10 +8745,16 @@ void Player_Action_8084193C(Player* this, PlayState* play) {
         temp3 = ABS(temp2);
 
         if (temp3 > 0x4000) {
-            if (Math_StepToF(&this->linearVelocity, 0.0f, ZOP_PlayerAccel(3.0f)) != 0) {
+            if (ZOP_PlayerQuickTurn()) {
+                // ZeldaOOTProject: turn at once instead of stopping first, so direction changes flow
+                this->linearVelocity *= 0.5f;
                 this->yaw = yawTarget;
+            } else {
+                if (Math_StepToF(&this->linearVelocity, 0.0f, ZOP_PlayerAccel(3.0f)) != 0) {
+                    this->yaw = yawTarget;
+                }
+                return;
             }
-            return;
         }
 
         speedTarget *= 0.9f;
