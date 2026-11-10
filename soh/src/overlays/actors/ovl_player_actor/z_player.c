@@ -2518,11 +2518,6 @@ void Player_ProcessItemButtons(Player* this, PlayState* play) {
         }
     }
 
-    // ZeldaOOTProject: while locked on, B (C-Down) rolls instead of using its item (Player_ActionHandler_10)
-    if (ZOP_LockOnDodge() && Player_IsZTargeting(this) && CHECK_BTN_ALL(sControlInput->press.button, BTN_CDOWN)) {
-        return;
-    }
-
     if (!(this->stateFlags1 & (PLAYER_STATE1_CARRYING_ACTOR | PLAYER_STATE1_IN_CUTSCENE)) && !func_8008F128(this)) {
         if (this->itemAction >= PLAYER_IA_FISHING_POLE) {
             bool hasOnDpad = false;
@@ -6319,10 +6314,6 @@ s32 func_8083BBA0(Player* this, PlayState* play) {
 
 void Player_SetupRoll(Player* this, PlayState* play) {
     Player_SetupAction(play, this, Player_Action_Roll, 0);
-    // ZeldaOOTProject: a roll dodges hits for a few frames (ModernControls.cpp)
-    if (ZOP_DodgeIFrames() > 0) {
-        Player_SetInvulnerability(this, -ZOP_DodgeIFrames());
-    }
     LinkAnimation_PlayOnceSetSpeed(play, &this->skelAnime,
                                    GET_PLAYER_ANIM(PLAYER_ANIMGROUP_landing_roll, this->modelAnimType),
                                    1.25f * sWaterSpeedFactor);
@@ -6350,16 +6341,6 @@ void func_8083BCD0(Player* this, PlayState* play, s32 controlStickDirection) {
 
     this->yaw = this->actor.shape.rot.y + (controlStickDirection << 0xE);
     this->linearVelocity = !(controlStickDirection & 1) ? 6.0f : 8.5f;
-    // ZeldaOOTProject: locked on, the animation follows the main direction but the hop goes exactly where the stick
-    // points, and it dodges hits for a few frames (ModernControls.cpp)
-    if (ZOP_LockOnDodge()) {
-        if (sControlStickMagnitude > 12.0f) {
-            this->yaw = sControlStickWorldYaw;
-        }
-        if (ZOP_DodgeIFrames() > 0) {
-            Player_SetInvulnerability(this, -ZOP_DodgeIFrames());
-        }
-    }
 
     this->stateFlags2 |= PLAYER_STATE2_HOPPING;
 
@@ -6368,18 +6349,6 @@ void func_8083BCD0(Player* this, PlayState* play, s32 controlStickDirection) {
 
 s32 Player_ActionHandler_10(Player* this, PlayState* play) {
     s32 controlStickDirection;
-
-    // ZeldaOOTProject: locked on, B (C-Down) rolls in the stick direction (forward without stick) (ModernControls.cpp)
-    if (ZOP_LockOnDodge() && Player_IsZTargeting(this) && CHECK_BTN_ALL(sControlInput->press.button, BTN_CDOWN) &&
-        (sFloorType != 7) && !(this->stateFlags1 & PLAYER_STATE1_IN_WATER)) {
-        if (sControlStickMagnitude > 12.0f) {
-            this->yaw = this->actor.shape.rot.y = sControlStickWorldYaw;
-        } else {
-            this->yaw = this->actor.shape.rot.y;
-        }
-        Player_SetupRoll(this, play);
-        return 1;
-    }
 
     if (CHECK_BTN_ALL(sControlInput->press.button, BTN_A) &&
         (play->roomCtx.curRoom.behaviorType1 != ROOM_BEHAVIOR_TYPE1_2) && (sFloorType != 7) &&
