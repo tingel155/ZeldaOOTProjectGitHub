@@ -159,9 +159,9 @@ static void BossGoma_SetupLandingWave(void) {
 
 // Hop attack landings: smaller still, so a roll away gets Link out of reach
 static void BossGoma_SetupHopWave(void) {
-    sZopWaveMaxScale = 0.45f;
+    sZopWaveMaxScale = 0.55f;
     sZopWaveInner = 0.0f;
-    sZopWaveRadius = 120.0f;
+    sZopWaveRadius = 150.0f;
     sZopWaveDamage = 16;
     sZopWaveCanHit = true;
 }
