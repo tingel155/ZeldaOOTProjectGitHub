@@ -20,6 +20,70 @@
 #define ZOP_GND_LINK_SPEEDUP 1.5f
 #define ZOP_GND_PHANTOM_SPEEDUP 2.5f
 #define ZOP_GND_MAX_SPEED 28.0f
+// A ball he throws on the fly (not in a volley) and Link hits back starts a rally this often; otherwise it hits him
+#define ZOP_GND_FREE_BALL_RALLY 0.9f
+
+// Rally state of the energy ball (unused slots of work / fwork for this kind of fire)
+#define ZOP_RALLY_HITS work[FHGFIRE_US_2]
+#define ZOP_ARC_HEIGHT fwork[FHGFIRE_UF_1]
+#define ZOP_ARC_SIDE fwork[FHGFIRE_UF_2]
+#define ZOP_ARC_TOTAL fwork[FHGFIRE_UF_4]
+#define ZOP_ARC_TRAVELED fwork[12]
+#define ZOP_ARC_PREV_Y fwork[13]
+#define ZOP_ARC_PREV_SIDE fwork[14]
+#define ZOP_ARC_PERP_YAW fwork[FHGFIRE_WARP_TEX_1_X]
+
+/**
+ * ZeldaOOTProject: one more hit in a rally. A clang that rises in pitch with every hit, the room lights up a bit more,
+ * and the flight to (tx, ty, tz) gets a curve: straight at first, then ever higher arcs and sideways swings.
+ */
+static void EnFhgFire_ZopRallyHit(EnFhgFire* this, f32 tx, f32 ty, f32 tz) {
+    static f32 sFreq;
+    static f32 sVolume = 1.0f;
+    static s8 sReverb = 0;
+    s16 hits = ++this->ZOP_RALLY_HITS;
+    f32 dx = tx - this->actor.world.pos.x;
+    f32 dy = ty - this->actor.world.pos.y;
+    f32 dz = tz - this->actor.world.pos.z;
+
+    sFreq = CLAMP_MAX(0.85f + hits * 0.07f, 2.2f);
+    Audio_PlaySfxGeneral(NA_SE_IT_SHIELD_REFLECT_SW, &this->actor.projectedPos, 4, &sFreq, &sVolume, &sReverb);
+    ZOP_GndRallyGlow(hits);
+
+    this->ZOP_ARC_TOTAL = sqrtf(SQ(dx) + SQ(dy) + SQ(dz));
+    this->ZOP_ARC_TRAVELED = 0.0f;
+    this->ZOP_ARC_PREV_Y = 0.0f;
+    this->ZOP_ARC_PREV_SIDE = 0.0f;
+    this->ZOP_ARC_HEIGHT = (hits >= 3) ? CLAMP_MAX(hits - 2, 14) * 16.0f : 0.0f;
+    this->ZOP_ARC_SIDE =
+        (hits >= 6) ? ((Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f) * CLAMP_MAX(hits - 5, 10) * 11.0f : 0.0f;
+    this->ZOP_ARC_PERP_YAW = (f32)(s16)(Math_FAtan2F(dx, dz) * (0x8000 / M_PI) + 0x4000);
+}
+
+// Moves the ball along its current curve (the offsets come back to zero on arrival)
+static void EnFhgFire_ZopRallyArc(EnFhgFire* this) {
+    f32 p;
+    f32 y;
+    f32 side;
+    s16 perp;
+
+    if (this->ZOP_ARC_TOTAL <= 0.0f) {
+        return;
+    }
+    this->ZOP_ARC_TRAVELED += this->actor.speedXZ;
+    p = CLAMP(this->ZOP_ARC_TRAVELED / this->ZOP_ARC_TOTAL, 0.0f, 1.0f);
+    y = this->ZOP_ARC_HEIGHT * sinf(p * M_PI);
+    side = this->ZOP_ARC_SIDE * sinf(p * M_PI);
+    perp = (s16)this->ZOP_ARC_PERP_YAW;
+    this->actor.world.pos.y += y - this->ZOP_ARC_PREV_Y;
+    this->actor.world.pos.x += Math_SinS(perp) * (side - this->ZOP_ARC_PREV_SIDE);
+    this->actor.world.pos.z += Math_CosS(perp) * (side - this->ZOP_ARC_PREV_SIDE);
+    this->ZOP_ARC_PREV_Y = y;
+    this->ZOP_ARC_PREV_SIDE = side;
+    if (p >= 1.0f) {
+        this->ZOP_ARC_TOTAL = 0.0f;
+    }
+}
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
 
@@ -451,6 +515,9 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
         dzL = player->actor.world.pos.z - this->actor.world.pos.z;
         Actor_UpdateVelocityXYZ(&this->actor);
         Actor_UpdatePos(&this->actor);
+        if (ZOP_DifficultyEnabled()) {
+            EnFhgFire_ZopRallyArc(this);
+        }
         if (this->work[FHGFIRE_VARIANCE_TIMER] & 1) {
             Actor_SetScale(&this->actor, 6.0f);
         } else {
@@ -509,9 +576,24 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                         Rumble_Request(this->actor.xyzDistToPlayerSq, 0xFF, 0x14, 0x96);
                     } else {
                         if (bossGnd->flyMode == GND_FLY_NEUTRAL) {
-                            angleModX = Rand_CenteredFloat(0x2000);
-                            angleModY = Rand_CenteredFloat(0x2000);
-                            this->actor.speedXZ = 15.0f;
+                            if (ZOP_DifficultyEnabled()) {
+                                // No more misses: mostly he takes it up and a rally starts, rarely it hits him
+                                angleModX = 0;
+                                angleModY = 0;
+                                if (Rand_ZeroOne() < ZOP_GND_FREE_BALL_RALLY) {
+                                    bossGnd->flyMode = GND_FLY_RETURN;
+                                    bossGnd->returnSuccess = false;
+                                    bossGnd->timers[0] = 100;
+                                    this->work[FHGFIRE_RETURN_COUNT] = 1;
+                                    this->actor.speedXZ = 12.0f;
+                                } else {
+                                    this->actor.speedXZ = 15.0f;
+                                }
+                            } else {
+                                angleModX = Rand_CenteredFloat(0x2000);
+                                angleModY = Rand_CenteredFloat(0x2000);
+                                this->actor.speedXZ = 15.0f;
+                            }
                         } else {
                             angleModX = 0;
                             angleModY = 0;
@@ -545,6 +627,10 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                             angleModX;
                         this->work[FHGFIRE_FIRE_MODE] = FHGFIRE_LIGHT_BLUE;
                         this->work[FHGFIRE_FX_TIMER] = 2;
+                        if (ZOP_DifficultyEnabled()) {
+                            EnFhgFire_ZopRallyHit(this, bossGnd->targetPos.x, bossGnd->targetPos.y,
+                                                  bossGnd->targetPos.z);
+                        }
                         Audio_PlaySfxGeneral(NA_SE_IT_SWORD_REFLECT_MG, &player->actor.projectedPos, 4,
                                              &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
                                              &gSfxDefaultReverb);
@@ -605,6 +691,10 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                     this->actor.world.rot.x = Math_FAtan2F(dyL, dxzL) * (0x8000 / M_PI);
                     this->work[FHGFIRE_FIRE_MODE] = FHGFIRE_LIGHT_GREEN;
                     Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_REFLECT_MG);
+                    if (ZOP_DifficultyEnabled()) {
+                        EnFhgFire_ZopRallyHit(this, player->actor.world.pos.x, player->actor.world.pos.y + 40.0f,
+                                              player->actor.world.pos.z);
+                    }
                     this->actor.speedXZ += ZOP_DifficultyEnabled() ? ZOP_GND_PHANTOM_SPEEDUP : 2.0f;
                 }
                 break;
@@ -638,6 +728,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                 }
                 bossGnd->flyMode = GND_FLY_NEUTRAL;
                 this->work[FHGFIRE_KILL_TIMER] = 30;
+                ZOP_GndRallyGlow(0);
                 this->actor.draw = NULL;
                 if (killMode == BALL_FIZZLE) {
                     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_THUNDER_GND);
