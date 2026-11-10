@@ -140,7 +140,30 @@ static f32 sZopWaveScale;
 static s16 sZopWaveAlpha;
 static s16 sZopWaveTimer;
 
-static u8 sZopWaveCanHit; // the barrage shockwave throws Link back when its ring reaches him on the ground
+static u8 sZopWaveCanHit; // the shockwave throws Link back when its ring reaches him on the ground
+// Shape of the current shockwave: final size, where its ring starts catching Link (fraction of the 300x band), how far
+// it reaches, and damage (0 = only a push)
+static f32 sZopWaveMaxScale = 3.4f;
+static f32 sZopWaveInner = 0.5f;
+static f32 sZopWaveRadius = 520.0f;
+static s16 sZopWaveDamage = 0;
+
+// Phase 2: small shockwave when she drops from the ceiling; it hurts, so standing right under her doesn't pay off
+static void BossGoma_SetupLandingWave(void) {
+    sZopWaveMaxScale = 1.3f;
+    sZopWaveInner = 0.0f;
+    sZopWaveRadius = 330.0f;
+    sZopWaveDamage = 16;
+    sZopWaveCanHit = true;
+}
+
+// The big barrage / intro shockwave: only pushes
+static void BossGoma_SetupSlamWave(void) {
+    sZopWaveMaxScale = 3.4f;
+    sZopWaveInner = 0.5f;
+    sZopWaveRadius = BOSSGOMA_SLAM_WAVE_RADIUS;
+    sZopWaveDamage = 0;
+}
 
 static void BossGoma_SpawnShockwave(BossGoma* this, f32 floorY) {
     sZopWavePos = this->actor.world.pos;
@@ -154,7 +177,7 @@ static void BossGoma_SpawnShockwave(BossGoma* this, f32 floorY) {
 static void BossGoma_UpdateShockwave(void) {
     if (sZopWaveAlpha > 0) {
         sZopWaveTimer++;
-        Math_ApproachF(&sZopWaveScale, 3.4f, 1.0f, 0.24f);
+        Math_ApproachF(&sZopWaveScale, sZopWaveMaxScale, 1.0f, 0.24f * sZopWaveMaxScale / 3.4f + 0.06f);
         sZopWaveAlpha -= (sZopWaveTimer < 6) ? 8 : 22;
         if (sZopWaveAlpha < 0) {
             sZopWaveAlpha = 0;
@@ -225,6 +248,7 @@ static void BossGoma_Phase2Slam(BossGoma* this, PlayState* play) {
                 if (sZopSlamIntoBarrage) {
                     // Barrage attack: a shockwave rolls over the floor; within its reach Link flies a lot further
                     // (no damage), and has to fight his way back
+                    BossGoma_SetupSlamWave();
                     BossGoma_SpawnShockwave(this, this->actor.world.pos.y);
                     Actor_SpawnFloorDustRing(play, &this->actor, &sZopWavePos, 200.0f, 20, 12.0f, 1000, 20, true);
                     // The ring itself throws Link back once it reaches him, unless he jumps over it
@@ -239,13 +263,15 @@ static void BossGoma_Phase2Slam(BossGoma* this, PlayState* play) {
                     sZopEyeFlashTimer = BOSSGOMA_EYE_FLASH_FRAMES;
                 } else {
                     // Phase 2 intro: the same shockwave opens some distance before the cutscene
+                    BossGoma_SetupSlamWave();
                     BossGoma_SpawnShockwave(this, this->actor.world.pos.y);
                     Actor_SpawnFloorDustRing(play, &this->actor, &sZopWavePos, 200.0f, 20, 12.0f, 1000, 20, true);
                     Actor_SetPlayerKnockbackLargeNoDamage(play, &this->actor, 13.0f, this->actor.yawTowardsPlayer,
                                                           6.0f);
                 }
                 this->actionState = 1;
-                this->framesUntilNextAction = 30; // Link lands and gets back up
+                // Link lands and gets back up; in the fake death intro she collapses while the wave still rolls
+                this->framesUntilNextAction = (!sZopSlamIntoBarrage && ZOP_Phase2IntroStyle() == 1) ? 4 : 30;
             }
             break;
 
@@ -2246,6 +2272,10 @@ void BossGoma_FallJump(BossGoma* this, PlayState* play) {
         this->actor.velocity.y = 0.0f;
         BossGoma_PlayEffectsAndSfx(this, play, 0, 8);
         Actor_RequestQuakeAndRumble(&this->actor, play, 5, 0xF);
+        if (sZopPhase2Announced) {
+            BossGoma_SetupLandingWave();
+            BossGoma_SpawnShockwave(this, this->actor.world.pos.y);
+        }
     }
 }
 
@@ -2980,13 +3010,20 @@ void BossGoma_Update(Actor* thisx, PlayState* play) {
         Player* player = GET_PLAYER(play);
         f32 dist = Math_Vec3f_DistXZ(&sZopWavePos, &player->actor.world.pos);
 
-        if (sZopWaveAlpha <= 0 || sZopWaveScale * 150.0f > BOSSGOMA_SLAM_WAVE_RADIUS) {
+        f32 inner = sZopWaveScale * 300.0f * sZopWaveInner;
+
+        if (sZopWaveAlpha <= 0 || inner > sZopWaveRadius) {
             sZopWaveCanHit = false;
-        } else if (dist >= sZopWaveScale * 150.0f && dist <= sZopWaveScale * 300.0f &&
-                   dist < BOSSGOMA_SLAM_WAVE_RADIUS && (player->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
+        } else if (dist >= inner && dist <= sZopWaveScale * 300.0f && dist < sZopWaveRadius &&
+                   (player->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
+            s16 yaw = Math_Vec3f_Yaw(&sZopWavePos, &player->actor.world.pos);
+
             sZopWaveCanHit = false;
-            Actor_SetPlayerKnockbackLargeNoDamage(play, &this->actor, 17.0f,
-                                                  Math_Vec3f_Yaw(&sZopWavePos, &player->actor.world.pos), 8.0f);
+            if (sZopWaveDamage > 0) {
+                Actor_SetPlayerKnockbackLarge(play, &this->actor, 8.0f, yaw, 5.0f, sZopWaveDamage);
+            } else {
+                Actor_SetPlayerKnockbackLargeNoDamage(play, &this->actor, 17.0f, yaw, 8.0f);
+            }
         }
     }
     if (sZopHitFlash > 0) {
