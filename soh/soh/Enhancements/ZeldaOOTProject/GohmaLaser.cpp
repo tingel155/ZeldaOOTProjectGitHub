@@ -7,6 +7,7 @@
 #include <libultraship/bridge/consolevariablebridge.h>
 
 #include "soh/ActorDB.h"
+#include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/ShipInit.hpp"
 #include "NayrusLove.h"
 #include "ZeldaOOTProjectHooks.h"
@@ -17,6 +18,7 @@ extern "C" {
 #include "functions.h"
 #include "macros.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
+extern PlayState* gPlayState;
 }
 
 using namespace NayrusLove;
@@ -266,7 +268,22 @@ extern "C" int ZOP_IsGohmaLaser(short actorId) {
     return sLaserActorId >= 0 && actorId == sLaserActorId;
 }
 
+// Testing aid (gZOP.TestEnv.LaserTest): a laser from a point in front of and above Link every 7 seconds, in any scene
+static void LaserTestTick() {
+    static int sFrames = 0;
+    if (++sFrames % 140 != 20) {
+        return;
+    }
+    Player* player = GET_PLAYER(gPlayState);
+    s16 yaw = player->actor.shape.rot.y;
+    Actor_Spawn(&gPlayState->actorCtx, gPlayState, sLaserActorId,
+                player->actor.world.pos.x + Math_SinS(yaw) * 260.0f, player->actor.world.pos.y + 130.0f,
+                player->actor.world.pos.z + Math_CosS(yaw) * 260.0f, 0, 0, 0, 0);
+}
+
 static void RegisterGohmaLaser() {
+    COND_HOOK(OnPlayerUpdate, CVarGetInteger("gZOP.TestEnv.LaserTest", 0), LaserTestTick);
+
     if (sLaserActorId < 0) {
         ActorDBInit entry = {};
         entry.name = "ZOP_GohmaLaser";
@@ -283,4 +300,4 @@ static void RegisterGohmaLaser() {
     }
 }
 
-static RegisterShipInitFunc initFunc(RegisterGohmaLaser, {});
+static RegisterShipInitFunc initFunc(RegisterGohmaLaser, { "gZOP.TestEnv.LaserTest" });

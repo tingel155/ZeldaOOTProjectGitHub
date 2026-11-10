@@ -57,7 +57,7 @@ void BossGoma_WallClimb(BossGoma* this, PlayState* play);
 void BossGoma_CeilingMoveToCenter(BossGoma* this, PlayState* play);
 void BossGoma_SpawnChildGohma(BossGoma* this, PlayState* play, s16 i);
 
-// ZeldaOOTProject: second phase once Gohma has lost 70% of her health. She retreats to the ceiling more often and,
+// ZeldaOOTProject: second phase once Gohma is down to half her health (gZOP.Difficulty.Phase2At). She retreats to the ceiling more often and,
 // instead of laying eggs, broods there and fires volleys of homing pearl arrows.
 #define BOSSGOMA_PHASE2_VOLLEY_FRAMES 110
 #define BOSSGOMA_PHASE2_ROAR_FRAMES 110
@@ -98,7 +98,7 @@ static void BossGoma_SetupPhase2Slam(BossGoma* this) {
 static void BossGoma_Phase2Slam(BossGoma* this, PlayState* play) {
     if (ZOP_TestPhase2Intro() && !sZopPhase2Announced) {
         // Testing aid (see BossGoma_Init): health is only scaled after Init, so drop it to phase 2 here
-        this->actor.colChkInfo.health = (u8)CLAMP_MIN(this->actor.colChkInfo.health * 3 / 10, 1);
+        this->actor.colChkInfo.health = (u8)CLAMP_MIN(this->actor.colChkInfo.health * ZOP_BossPhase2At(), 1);
         sZopPhase2Announced = true;
     }
 
@@ -230,6 +230,8 @@ static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
                                  ANIMMODE_ONCE, -3.0f);
             Audio_PlayActorSound2(&player->actor, LINK_IS_ADULT ? NA_SE_VO_LI_SURPRISE : NA_SE_VO_LI_SURPRISE_KID);
             Play_CameraSetFov(play, this->subCameraId, 16.0f);
+            // The boss music kicks back in with Link's startle
+            Audio_QueueSeqCmd(SEQ_PLAYER_BGM_MAIN << 24 | NA_BGM_BOSS);
         }
         if (elapsed < BOSSGOMA_PHASE2_LINK_SHOT_FRAME + 7) {
             // Slide back about 20 units along the step
@@ -260,7 +262,6 @@ static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
         BossGoma_SetHaze(play, 0.0f);
         this->disableGameplayLogic = false;
         this->invincibilityFrames = 10;
-        Audio_QueueSeqCmd(SEQ_PLAYER_BGM_MAIN << 24 | NA_BGM_BOSS);
         sZopFloorShootCooldown = 60;
 
         // Out of patience: she backs off, climbs the nearest wall and starts shooting
@@ -280,7 +281,7 @@ static void BossGoma_SetupPhase2FloorShoot(BossGoma* this) {
                      Animation_GetLastFrame(&gGohmaStandAnim), ANIMMODE_LOOP, -8.0f);
     this->actionFunc = BossGoma_Phase2FloorShoot;
     this->framesUntilNextAction = BOSSGOMA_FLOOR_SHOOT_FRAMES;
-    sZopUseLaser = Rand_ZeroOne() < 0.5f;
+    sZopUseLaser = Rand_ZeroOne() < 0.7f;
 }
 
 static void BossGoma_Phase2FloorShoot(BossGoma* this, PlayState* play) {
@@ -756,7 +757,7 @@ void BossGoma_SetupCeilingPrepareSpawnGohmas(BossGoma* this) {
                      Animation_GetLastFrame(&gGohmaPrepareEggsAnim), ANIMMODE_LOOP, -10.0f);
     this->actionFunc = BossGoma_CeilingPrepareSpawnGohmas;
     this->framesUntilNextAction = BossGoma_InPhase2(this) ? BOSSGOMA_PHASE2_VOLLEY_FRAMES : ZOP_AGGRO(70, 40);
-    sZopUseLaser = Rand_ZeroOne() < 0.5f;
+    sZopUseLaser = Rand_ZeroOne() < 0.7f;
 }
 
 void BossGoma_SetupWallClimb(BossGoma* this) {

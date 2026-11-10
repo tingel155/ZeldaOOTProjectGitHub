@@ -6,7 +6,8 @@
 //   gZOP.Difficulty.HealthMult   enemy health (default 2)
 //   gZOP.Difficulty.Aggressive   aggressive AI tuning, see ZOP_AGGRO in the enemies' source (default 1)
 //   gZOP.Difficulty.StunMult     how long a stunned boss stays down, see ZOP_STUN (default 1.5)
-//   gZOP.Difficulty.BossPhase2   bosses get a second phase after losing 70% of their health (default 1)
+//   gZOP.Difficulty.BossPhase2   bosses get a second phase (default 1)
+//   gZOP.Difficulty.Phase2At     share of their starting health at which it begins (default 0.5)
 
 #include <libultraship/bridge/consolevariablebridge.h>
 
@@ -68,7 +69,11 @@ extern "C" int ZOP_BossPhase2(void* bossRef, int baseHealth) {
     }
     float startHealth = baseHealth * CVarGetFloat(CVAR_ZOP_DIFFICULTY("HealthMult"), 2.0f);
     s8 health = (s8)boss->colChkInfo.health;
-    return health > 0 && health <= startHealth * 0.3f;
+    return health > 0 && health <= startHealth * ZOP_BossPhase2At();
+}
+
+extern "C" float ZOP_BossPhase2At(void) {
+    return CVarGetFloat(CVAR_ZOP_DIFFICULTY("Phase2At"), 0.5f);
 }
 
 extern "C" int ZOP_TestPhase2Intro(void) {
@@ -87,7 +92,7 @@ static void RegisterDifficulty() {
         }
         // Testing aid: bosses start with just enough health to already be in their second phase
         if (actor->category == ACTORCAT_BOSS && CVarGetInteger(CVAR_ZOP_DIFFICULTY("TestStartInPhase2"), 0)) {
-            actor->colChkInfo.health = (u8)std::max(1, (int)(actor->colChkInfo.health * 0.3f));
+            actor->colChkInfo.health = (u8)std::max(1, (int)(actor->colChkInfo.health * ZOP_BossPhase2At()));
         }
     });
 }

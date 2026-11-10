@@ -23,9 +23,10 @@ float ZOP_EnemyStunMult(void);
 // Nonzero when the difficulty options are on (Difficulty.cpp)
 int ZOP_DifficultyEnabled(void);
 
-// Boss AI code: nonzero once the boss (an Actor*) is in its second phase, i.e. has lost 70% of the health it started
-// with. baseHealth is the boss's vanilla health (Difficulty.cpp)
+// Boss AI code: nonzero once the boss (an Actor*) is in its second phase, i.e. is down to ZOP_BossPhase2At() of the
+// health it started with. baseHealth is the boss's vanilla health (Difficulty.cpp)
 int ZOP_BossPhase2(void* boss, int baseHealth);
+float ZOP_BossPhase2At(void);
 
 // Gohma phase 2: fires a volley of homing pearl arrows from the shooter's (an Actor*) focus point (GohmaPearlArrows.cpp)
 void ZOP_SpawnPearlVolley(struct PlayState* play, void* shooter, int count);
