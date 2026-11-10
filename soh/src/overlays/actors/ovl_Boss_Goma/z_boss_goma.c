@@ -2,6 +2,7 @@
 #include "textures/boss_title_cards/object_goma.h"
 #include "objects/object_goma/object_goma.h"
 #include "objects/gameplay_keep/gameplay_keep.h"
+#include "overlays/ovl_Boss_Ganon/ovl_Boss_Ganon.h" // gGanondorfShockwaveDL for the barrage slam
 #include "overlays/actors/ovl_En_Goma/z_en_goma.h"
 #include "overlays/actors/ovl_Door_Shutter/z_door_shutter.h"
 #include "overlays/actors/ovl_Door_Warp1/z_door_warp1.h"
@@ -126,6 +127,32 @@ static u8 sZopBarrageShots;
 #define BOSSGOMA_BARRAGE_FRAMES 300
 #define BOSSGOMA_BARRAGE_REACHED_DIST 170.0f
 
+// Shockwave of the barrage slam: Ganondorf's ground shockwave ring, white and misty
+static Vec3f sZopWavePos;
+static f32 sZopWaveScale;
+static s16 sZopWaveAlpha;
+static s16 sZopWaveTimer;
+
+static void BossGoma_SpawnShockwave(BossGoma* this, f32 floorY) {
+    sZopWavePos = this->actor.world.pos;
+    sZopWavePos.y = floorY + 2.0f;
+    sZopWaveScale = 0.2f;
+    sZopWaveAlpha = 255;
+    sZopWaveTimer = 0;
+}
+
+// Expands and fades the shockwave, once per game frame
+static void BossGoma_UpdateShockwave(void) {
+    if (sZopWaveAlpha > 0) {
+        sZopWaveTimer++;
+        Math_ApproachF(&sZopWaveScale, 3.4f, 1.0f, 0.24f);
+        sZopWaveAlpha -= (sZopWaveTimer < 6) ? 8 : 22;
+        if (sZopWaveAlpha < 0) {
+            sZopWaveAlpha = 0;
+        }
+    }
+}
+
 // Flash of light on the eye when it opens (frames left)
 static s16 sZopEyeFlashTimer;
 #define BOSSGOMA_EYE_FLASH_FRAMES 12
@@ -185,15 +212,8 @@ static void BossGoma_Phase2Slam(BossGoma* this, PlayState* play) {
                 if (sZopSlamIntoBarrage) {
                     // Barrage attack: a shockwave rolls over the floor; within its reach Link flies a lot further
                     // (no damage), and has to fight his way back
-                    static Color_RGBA8 wavePrim = { 255, 235, 235, 255 };
-                    static Color_RGBA8 waveEnv = { 255, 90, 70, 0 };
-                    Vec3f wavePos = this->actor.world.pos;
-                    Vec3f zero = { 0.0f, 0.0f, 0.0f };
-
-                    wavePos.y = this->actor.floorHeight + 3.0f;
-                    EffectSsBlast_Spawn(play, &wavePos, &zero, &zero, &wavePrim, &waveEnv, 150, 1300, 45, 14);
-                    EffectSsBlast_Spawn(play, &wavePos, &zero, &zero, &wavePrim, &waveEnv, 100, 800, 30, 12);
-                    Actor_SpawnFloorDustRing(play, &this->actor, &wavePos, 260.0f, 20, 14.0f, 1000, 20, true);
+                    BossGoma_SpawnShockwave(this, this->actor.world.pos.y);
+                    Actor_SpawnFloorDustRing(play, &this->actor, &sZopWavePos, 200.0f, 20, 12.0f, 1000, 20, true);
                     if (this->actor.xzDistToPlayer < BOSSGOMA_SLAM_WAVE_RADIUS) {
                         Actor_SetPlayerKnockbackLargeNoDamage(play, &this->actor, 17.0f,
                                                               this->actor.yawTowardsPlayer, 8.0f);
@@ -841,6 +861,7 @@ void BossGoma_Init(Actor* thisx, PlayState* play) {
     sZopEyeCycleFromRoar = false;
     sZopBarrageCooldown = 0;
     sZopSlamIntoBarrage = false;
+    sZopWaveAlpha = 0;
     // Undo a recolor left over from an earlier fight; the texture cache is flushed on the next draw
     ZOP_GohmaSetRecolor(0.0f);
     sZopRecolorDirty = true;
@@ -2466,6 +2487,7 @@ void BossGoma_UpdateHit(BossGoma* this, PlayState* play) {
         s32 damage;
 
         if (this->eyeClosedTimer == 0 && this->actionFunc != BossGoma_CeilingSpawnGohmas &&
+            this->actionFunc != BossGoma_Phase2Signal && // the barrage warning flashes can't be hit
             (this->collider.elements[0].info.bumperFlags & BUMP_HIT)) {
             this->collider.elements[0].info.bumperFlags &= ~BUMP_HIT;
 
@@ -2586,6 +2608,9 @@ static void BossGoma_ZopEyeTest(BossGoma* this, PlayState* play) {
     if (sZopEyeTestFrames % 120 == 1) {
         osSyncPrintf("ZOP eye test pose %d\n", pose);
     }
+    if (sZopEyeTestFrames % 30 == 1) {
+        BossGoma_SpawnShockwave(this, player->actor.world.pos.y); // to look at the barrage shockwave
+    }
     SkelAnime_Update(&this->skelanime);
     this->actor.world.pos.x = player->actor.world.pos.x + Math_SinS(player->actor.shape.rot.y) * 280.0f;
     this->actor.world.pos.z = player->actor.world.pos.z + Math_CosS(player->actor.shape.rot.y) * 280.0f;
@@ -2618,6 +2643,7 @@ void BossGoma_Update(Actor* thisx, PlayState* play) {
             sZopEyeTestFrames = 0;
         }
         this->actionFunc(this, play);
+        BossGoma_UpdateShockwave();
         return;
     }
 
@@ -2660,6 +2686,7 @@ void BossGoma_Update(Actor* thisx, PlayState* play) {
     if (sZopEyeFlashTimer > 0) {
         sZopEyeFlashTimer--;
     }
+    BossGoma_UpdateShockwave();
     BossGoma_UpdateMainEnvColor(this);
     BossGoma_UpdateEyeEnvColor(this);
     BossGoma_UpdateTailLimbsScale(this);
@@ -2948,6 +2975,22 @@ void BossGoma_Draw(Actor* thisx, PlayState* play) {
         Matrix_Scale(size * 3.5f, size * 0.22f, 1.0f, MTXMODE_APPLY);
         gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         gSPDisplayList(POLY_XLU_DISP++, gEffFlash1DL);
+    }
+
+    if (sZopWaveAlpha > 0) {
+        f32 xz = sZopWaveScale * 200.0f / 1500.0f;
+
+        Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+        gDPPipeSync(POLY_XLU_DISP++);
+        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 255, 255, sZopWaveAlpha);
+        gDPSetEnvColor(POLY_XLU_DISP++, 210, 215, 225, 128);
+        gSPSegment(POLY_XLU_DISP++, 0x08,
+                   Gfx_TwoTexScrollEx(play->state.gfxCtx, 0, sZopWaveTimer * 100, 0, 64, 32, 1, sZopWaveTimer * 100,
+                                      0, 64, 32, 100, 0, 100, 0));
+        Matrix_Translate(sZopWavePos.x, sZopWavePos.y, sZopWavePos.z, MTXMODE_NEW);
+        Matrix_Scale(xz, 0.8f * 200.0f / 1500.0f, xz, MTXMODE_APPLY);
+        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_XLU_DISP++, gGanondorfShockwaveDL);
     }
 
     CLOSE_DISPS(play->state.gfxCtx);
