@@ -47,7 +47,7 @@
  * with every hit, the room lights up a bit more, and the flight to (tx, ty, tz) gets a curve: straight at first, then
  * ever higher arcs and sideways swings.
  */
-static void EnFhgFire_ZopRallyHit(EnFhgFire* this, f32 tx, f32 ty, f32 tz) {
+static void EnFhgFire_ZopRallyHit(EnFhgFire* this, PlayState* play, f32 tx, f32 ty, f32 tz) {
     s16 hits = ++this->ZOP_RALLY_HITS;
     f32 dx = tx - this->actor.world.pos.x;
     f32 dy = ty - this->actor.world.pos.y;
@@ -55,6 +55,46 @@ static void EnFhgFire_ZopRallyHit(EnFhgFire* this, f32 tx, f32 ty, f32 tz) {
 
     this->ZOP_SOUND_FREQ = CLAMP_MAX(0.7f + hits * 0.05f, 1.6f);
     this->ZOP_SOUND_FRAMES = ZOP_SOUND_LENGTH;
+
+    // Late in a rally every hit gets more violent: from the 6th hit small sparks of the ball fly off into the dark,
+    // from the 9th lightning bolts lash out in all directions, with thunder; both grow with the rally
+    if (hits >= 6) {
+        s16 i;
+        s16 count = CLAMP_MAX(hits - 4, 14) * 2;
+        Vec3f accel = { 0.0f, -0.35f, 0.0f };
+
+        for (i = 0; i < count; i++) {
+            Vec3f vel;
+            f32 speed = 6.0f + Rand_ZeroOne() * (4.0f + hits * 0.4f);
+            s16 yaw = (s16)(Rand_ZeroOne() * 0xFFFF);
+            f32 up = Rand_CenteredFloat(1.4f);
+
+            vel.x = Math_SinS(yaw) * speed;
+            vel.y = up * speed;
+            vel.z = Math_CosS(yaw) * speed;
+            EffectSsFhgFlash_SpawnLightBall(play, &this->actor.world.pos, &vel, &accel,
+                                            (s16)(Rand_ZeroOne() * 40.0f) + 40,
+                                            (i & 1) ? FHGFLASH_LIGHTBALL_LIGHTBLUE : FHGFLASH_LIGHTBALL_GREEN);
+        }
+    }
+    if (hits >= 9) {
+        static Color_RGBA8 boltPrim = { 255, 255, 255, 255 };
+        static Color_RGBA8 boltEnv = { 120, 230, 255, 255 };
+        s16 i;
+        s16 bolts = CLAMP_MAX(hits - 7, 6);
+
+        for (i = 0; i < bolts; i++) {
+            Vec3f pos = this->actor.world.pos;
+            s16 yaw = (s16)(i * (0x10000 / bolts) + Rand_CenteredFloat(0x2000));
+
+            EffectSsLightning_Spawn(play, &pos, &boltPrim, &boltEnv, (s16)(200 + Rand_ZeroOne() * 120.0f), yaw,
+                                    (s16)(6 + Rand_ZeroOne() * 3.0f), (s16)CLAMP_MAX(1 + hits / 5, 4));
+        }
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_THUNDER);
+        if (hits >= 13) {
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_SPARK);
+        }
+    }
     ZOP_GndRallyGlow(hits);
 
     this->ZOP_ARC_TOTAL = sqrtf(SQ(dx) + SQ(dy) + SQ(dz));
@@ -673,7 +713,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                         this->work[FHGFIRE_FIRE_MODE] = FHGFIRE_LIGHT_BLUE;
                         this->work[FHGFIRE_FX_TIMER] = 2;
                         if (ZOP_DifficultyEnabled()) {
-                            EnFhgFire_ZopRallyHit(this, bossGnd->targetPos.x, bossGnd->targetPos.y,
+                            EnFhgFire_ZopRallyHit(this, play, bossGnd->targetPos.x, bossGnd->targetPos.y,
                                                   bossGnd->targetPos.z);
                         }
                         Audio_PlaySfxGeneral(NA_SE_IT_SWORD_REFLECT_MG, &player->actor.projectedPos, 4,
@@ -737,7 +777,8 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                     this->work[FHGFIRE_FIRE_MODE] = FHGFIRE_LIGHT_GREEN;
                     Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_REFLECT_MG);
                     if (ZOP_DifficultyEnabled()) {
-                        EnFhgFire_ZopRallyHit(this, player->actor.world.pos.x, player->actor.world.pos.y + 40.0f,
+                        EnFhgFire_ZopRallyHit(this, play, player->actor.world.pos.x,
+                                              player->actor.world.pos.y + 40.0f,
                                               player->actor.world.pos.z);
                     }
                     this->actor.speedXZ += ZOP_DifficultyEnabled() ? ZOP_GND_PHANTOM_SPEEDUP : 2.0f;
