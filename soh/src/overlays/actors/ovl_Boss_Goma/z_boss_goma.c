@@ -166,6 +166,8 @@ static s32 BossGoma_InPhase2(BossGoma* this) {
 
 // Phase 2: everything she does with her legs is 20% faster
 #define BOSSGOMA_P2_SPEED(x) ((x) * (BossGoma_InPhase2(this) ? 1.2f : 1.0f))
+// Phase 2: heading for the wall and climbing it goes twice as fast, so she spends less time getting to the ceiling
+#define BOSSGOMA_P2_CLIMB(x) ((x) * (BossGoma_InPhase2(this) ? 2.0f : 1.0f))
 
 static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play);
 static void BossGoma_Phase2Slam(BossGoma* this, PlayState* play);
@@ -1225,7 +1227,7 @@ void BossGoma_SetupCeilingPrepareSpawnGohmas(BossGoma* this) {
 }
 
 void BossGoma_SetupWallClimb(BossGoma* this) {
-    Animation_Change(&this->skelanime, &gGohmaClimbAnim, BOSSGOMA_P2_SPEED(1.0f), 0.0f, Animation_GetLastFrame(&gGohmaClimbAnim),
+    Animation_Change(&this->skelanime, &gGohmaClimbAnim, BOSSGOMA_P2_CLIMB(1.0f), 0.0f, Animation_GetLastFrame(&gGohmaClimbAnim),
                      ANIMMODE_LOOP, -10.0f);
     this->actionFunc = BossGoma_WallClimb;
     this->actor.speedXZ = 0.0f;
@@ -2424,19 +2426,19 @@ void BossGoma_FloorMain(BossGoma* this, PlayState* play) {
         } else {
             if (this->timer != 0) {
                 // move away from the player, walking backwards
-                Math_ApproachF(&this->actor.speedXZ, BOSSGOMA_P2_SPEED(-10.0f), 0.5f, 2.0f);
-                this->skelanime.playSpeed = BOSSGOMA_P2_SPEED(-3.0f);
+                Math_ApproachF(&this->actor.speedXZ, BOSSGOMA_P2_CLIMB(-10.0f), 0.5f, BOSSGOMA_P2_CLIMB(2.0f));
+                this->skelanime.playSpeed = BOSSGOMA_P2_CLIMB(-3.0f);
                 if (this->timer == 1) {
                     this->actor.speedXZ = 0.0f;
                 }
             } else {
                 // move away from the player, walking forwards
-                Math_ApproachF(&this->actor.speedXZ, BOSSGOMA_P2_SPEED(20.0f / 3.0f), 0.5f, 2.0f);
-                this->skelanime.playSpeed = BOSSGOMA_P2_SPEED(2.0f);
+                Math_ApproachF(&this->actor.speedXZ, BOSSGOMA_P2_CLIMB(20.0f / 3.0f), 0.5f, BOSSGOMA_P2_CLIMB(2.0f));
+                this->skelanime.playSpeed = BOSSGOMA_P2_CLIMB(2.0f);
                 rot += 0x8000;
             }
 
-            Math_ApproachS(&this->actor.world.rot.y, rot, 3, 0x9C4);
+            Math_ApproachS(&this->actor.world.rot.y, rot, 3, (s16)BOSSGOMA_P2_CLIMB(0x9C4));
         }
     }
 
@@ -2463,8 +2465,8 @@ void BossGoma_WallClimb(BossGoma* this, PlayState* play) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_CLIM);
     }
 
-    Math_ApproachF(&this->actor.velocity.y, BOSSGOMA_P2_SPEED(5.0f), 0.5f, 2.0f);
-    Math_ApproachS(&this->actor.shape.rot.x, -0x4000, 2, 0x7D0);
+    Math_ApproachF(&this->actor.velocity.y, BOSSGOMA_P2_CLIMB(5.0f), 0.5f, BOSSGOMA_P2_CLIMB(2.0f));
+    Math_ApproachS(&this->actor.shape.rot.x, -0x4000, 2, (s16)BOSSGOMA_P2_CLIMB(0x7D0));
     Math_ApproachS(&this->actor.world.rot.y, this->actor.wallYaw + 0x8000, 2, 0x5DC);
 
     // -320 is a bit below boss room ceiling
