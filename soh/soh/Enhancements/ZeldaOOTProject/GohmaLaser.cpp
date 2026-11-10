@@ -49,8 +49,9 @@ struct GohmaLaser {
 };
 
 // The room takes on the beam's color while a laser fires: added to the ambient light and the fog
-constexpr float kGlowAmbient[3] = { 110.0f, 26.0f, 44.0f };
-constexpr float kGlowFog[3] = { 150.0f, 36.0f, 60.0f };
+// Blue, like the beam
+constexpr float kGlowAmbient[3] = { 26.0f, 50.0f, 110.0f };
+constexpr float kGlowFog[3] = { 36.0f, 75.0f, 150.0f };
 float sRoomGlow = 0.0f;
 bool sRoomGlowApplied = false;
 
@@ -162,7 +163,7 @@ void GohmaLaser_Update(Actor* thisx, PlayState* play) {
         Vec3f vel = { Rand_CenteredFloat(5.0f), 3.0f + Rand_ZeroOne() * 3.0f, Rand_CenteredFloat(5.0f) };
         Vec3f accel = { 0.0f, -0.4f, 0.0f };
         Color_RGBA8 prim = { 255, 255, 220, 255 };
-        Color_RGBA8 env = { 255, 70, 60, 255 };
+        Color_RGBA8 env = { 70, 130, 255, 255 };
         EffectSsKiraKira_SpawnDispersed(play, &pos, &vel, &accel, &prim, &env, 2200, 10);
     }
     if (self->timer % 6 == 0) {
@@ -238,7 +239,7 @@ extern "C" void GohmaLaser_Draw(Actor* thisx, PlayState* play) {
 
     // Glow at the eye and at the impact point
     Gfx_SetupDL_25Xlu(play->state.gfxCtx);
-    gDPSetEnvColor(POLY_XLU_DISP++, 255, 60, 70, 255);
+    gDPSetEnvColor(POLY_XLU_DISP++, 60, 120, 255, 255);
     DrawFlash(play, self->origin, aiming ? 0.015f + t * 0.0012f : 0.05f, strength);
     if (!aiming) {
         DrawFlash(play, self->impact, 0.06f + 0.01f * sinf(t * 2.3f), strength);
@@ -259,11 +260,11 @@ extern "C" void GohmaLaser_Draw(Actor* thisx, PlayState* play) {
     const V3 b = self->impact - self->origin;
     const V3 eyeLocal = V3{ play->view.eye.x, play->view.eye.y, play->view.eye.z } - self->origin;
     if (aiming) {
-        DrawBeamQuad(dl, play, a, b, eyeLocal, 1.2f, { 1.0f, 0.35f, 0.4f }, strength);
+        DrawBeamQuad(dl, play, a, b, eyeLocal, 1.2f, { 0.4f, 0.6f, 1.0f }, strength);
     } else {
         float pulse = 1.0f + 0.15f * sinf(t * 2.9f);
-        DrawBeamQuad(dl, play, a, b, eyeLocal, 14.0f * pulse, { 1.0f, 0.25f, 0.35f }, 0.3f * strength);
-        DrawBeamQuad(dl, play, a, b, eyeLocal, 6.0f * pulse, { 1.0f, 0.55f, 0.65f }, 0.7f * strength);
+        DrawBeamQuad(dl, play, a, b, eyeLocal, 14.0f * pulse, { 0.2f, 0.4f, 1.0f }, 0.3f * strength);
+        DrawBeamQuad(dl, play, a, b, eyeLocal, 6.0f * pulse, { 0.55f, 0.75f, 1.0f }, 0.7f * strength);
         DrawBeamQuad(dl, play, a, b, eyeLocal, 2.2f, { 1.0f, 1.0f, 1.0f }, strength);
     }
     POLY_XLU_DISP = dl;

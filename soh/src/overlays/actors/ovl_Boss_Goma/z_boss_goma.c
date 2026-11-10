@@ -283,6 +283,16 @@ static void BossGoma_SetupPhase2Roar(BossGoma* this, PlayState* play) {
  * Light bluish haze over the room (fog brightened, tinted blue and pulled in a little, a touch of blue ambient light).
  * intensity 0..1, 0 restores the room's own lighting.
  */
+// Phase 2: the bluish haze of the intro flashes up for a moment whenever Link lands a hit (frames left)
+static s16 sZopHitFlash;
+#define BOSSGOMA_HIT_FLASH_FRAMES 9
+
+static void BossGoma_HitFlash(void) {
+    if (sZopPhase2Announced) {
+        sZopHitFlash = BOSSGOMA_HIT_FLASH_FRAMES;
+    }
+}
+
 static void BossGoma_SetHaze(PlayState* play, f32 intensity) {
     f32 fogNear = play->envCtx.lightSettings.fogNear;
 
@@ -1057,6 +1067,7 @@ void BossGoma_Init(Actor* thisx, PlayState* play) {
     sZopBarrageCooldown = 0;
     sZopSlamIntoBarrage = false;
     sZopWaveAlpha = 0;
+    sZopHitFlash = 0;
     // Undo a recolor left over from an earlier fight; the texture cache is flushed on the next draw
     ZOP_GohmaSetRecolor(0.0f);
     sZopRecolorDirty = true;
@@ -2685,9 +2696,11 @@ void BossGoma_UpdateHit(BossGoma* this, PlayState* play) {
                 this->actionFunc == BossGoma_CeilingPrepareSpawnGohmas) {
                 ZOP_StopGohmaLasers(play);
                 BossGoma_SetupFallStruckDown(this);
+                BossGoma_HitFlash();
                 Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_DAM2);
             } else if (this->actionFunc == BossGoma_FloorStunned &&
                        (damage = CollisionCheck_GetSwordDamage(acHitInfo->toucher.dmgFlags, play)) != 0) {
+                BossGoma_HitFlash();
                 this->actor.colChkInfo.health -= damage;
 
                 if ((s8)this->actor.colChkInfo.health > 0) {
@@ -2714,6 +2727,7 @@ void BossGoma_UpdateHit(BossGoma* this, PlayState* play) {
                 this->invincibilityFrames = 10;
                 ZOP_StopGohmaLasers(play);
                 BossGoma_SetupFloorStunned(this);
+                BossGoma_HitFlash();
                 this->sfxFaintTimer = 100;
 
                 if (acHitInfo->toucher.dmgFlags & 1) {
@@ -2896,6 +2910,11 @@ void BossGoma_Update(Actor* thisx, PlayState* play) {
         sZopEyeFlashTimer--;
     }
     BossGoma_UpdateShockwave();
+    if (sZopHitFlash > 0) {
+        // Full right away, then fading out; cleared on the last frame
+        sZopHitFlash--;
+        BossGoma_SetHaze(play, (f32)sZopHitFlash / (BOSSGOMA_HIT_FLASH_FRAMES - 1));
+    }
     BossGoma_UpdateMainEnvColor(this);
     BossGoma_UpdateEyeEnvColor(this);
     BossGoma_UpdateTailLimbsScale(this);
