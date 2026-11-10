@@ -42,39 +42,6 @@
 #define ZOP_SOUND_FREQ fwork[FHGFIRE_WARP_ALPHA]
 #define ZOP_SOUND_LENGTH 16
 #define ZOP_GND_RALLY_SOUND 0 // rising charge sound on every hit (off for now)
-// The ball gets ever more unstable during a rally: purple, cracking, wobbling and twitching (fully at this many hits)
-#define ZOP_UNSTABLE_FULL_HITS 10.0f
-
-// 0 (fresh ball) .. 1 (about to burst)
-static f32 EnFhgFire_ZopInstability(EnFhgFire* this) {
-    if (!ZOP_DifficultyEnabled() || (this->actor.params != FHGFIRE_ENERGY_BALL) || (this->ZOP_RALLY_HITS <= 0)) {
-        return 0.0f;
-    }
-    return CLAMP_MAX(this->ZOP_RALLY_HITS / ZOP_UNSTABLE_FULL_HITS, 1.0f);
-}
-
-// Little purple cracks of lightning flicker over the ball, more and bigger the longer the rally
-static void EnFhgFire_ZopCrackle(EnFhgFire* this, PlayState* play) {
-    static Color_RGBA8 crackPrim = { 255, 220, 255, 255 };
-    static Color_RGBA8 crackEnv = { 170, 40, 255, 255 };
-    f32 t = EnFhgFire_ZopInstability(this);
-    s16 i;
-
-    if (t <= 0.0f) {
-        return;
-    }
-    for (i = 0; i < 2; i++) {
-        if (Rand_ZeroOne() < 0.15f + t * 0.45f) {
-            Vec3f pos = this->actor.world.pos;
-
-            pos.x += Rand_CenteredFloat(10.0f);
-            pos.y += Rand_CenteredFloat(10.0f);
-            pos.z += Rand_CenteredFloat(10.0f);
-            EffectSsLightning_Spawn(play, &pos, &crackPrim, &crackEnv, (s16)(18.0f + t * 30.0f + Rand_ZeroOne() * 10.0f),
-                                    (s16)(Rand_ZeroOne() * 0xFFFF), 4, 1);
-        }
-    }
-}
 
 /**
  * ZeldaOOTProject: one more hit in a rally. The Mirror Shield charge sound (Twinrova fight), rising in level and pitch
@@ -648,7 +615,6 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
         if (ZOP_DifficultyEnabled()) {
             EnFhgFire_ZopRallyArc(this);
             EnFhgFire_ZopRallySound(this);
-            EnFhgFire_ZopCrackle(this, play);
         }
         if (this->work[FHGFIRE_VARIANCE_TIMER] & 1) {
             Actor_SetScale(&this->actor, 6.0f);
@@ -968,63 +934,19 @@ void EnFhgFire_Draw(Actor* thisx, PlayState* play) {
         gSPDisplayList(POLY_XLU_DISP++, SEGMENTED_TO_VIRTUAL(gPhantomLightningBlastDL));
     } else if ((this->actor.params == FHGFIRE_SPEAR_LIGHT) || (this->actor.params == FHGFIRE_ENERGY_BALL)) {
         osSyncPrintf("yari hikari draw 1\n");
-        f32 zopT = EnFhgFire_ZopInstability(this);
-        s16 envR;
-        s16 envG;
-        s16 envB;
-
         Matrix_ReplaceRotation(&play->billboardMtxF);
         Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 255, 255, (s8)this->fwork[FHGFIRE_ALPHA]);
+
         if (this->work[FHGFIRE_FIRE_MODE] > FHGFIRE_LIGHT_GREEN) {
-            envR = 0;
-            envG = 255;
-            envB = 255;
+            gDPSetEnvColor(POLY_XLU_DISP++, 0, 255, 255, 0);
         } else {
-            envR = 165;
-            envG = 255;
-            envB = 75;
+            gDPSetEnvColor(POLY_XLU_DISP++, 165, 255, 75, 0);
         }
-        if (zopT > 0.0f) {
-            // ZeldaOOTProject: unstable ball. It turns purple, wobbles (squash and stretch) and now and then twitches
-            // with a jump in size, position and brightness
-            f32 wobble = sinf(this->work[FHGFIRE_VARIANCE_TIMER] * (0.7f + zopT * 0.5f)) * zopT * 0.22f;
-            f32 sx = 1.0f + wobble;
-            f32 sy = 1.0f - wobble;
-            s16 twitch = Rand_ZeroOne() < zopT * 0.3f;
-
-            envR += (s16)((190 - envR) * zopT);
-            envG += (s16)((20 - envG) * zopT);
-            envB += (s16)((255 - envB) * zopT);
-            if (twitch) {
-                f32 jump = 0.7f + Rand_ZeroOne() * 0.65f;
-
-                sx *= jump;
-                sy *= jump * (0.85f + Rand_ZeroOne() * 0.3f);
-                Matrix_Translate(Rand_CenteredFloat(4.0f * zopT), Rand_CenteredFloat(4.0f * zopT), 0.0f, MTXMODE_APPLY);
-                gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 255, 255, (s8)this->fwork[FHGFIRE_ALPHA]);
-            } else {
-                gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, (u8)(255 - 70 * zopT), 255, (s8)this->fwork[FHGFIRE_ALPHA]);
-            }
-            Matrix_Scale(sx, sy, 1.0f, MTXMODE_APPLY);
-        } else {
-            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 255, 255, 255, (s8)this->fwork[FHGFIRE_ALPHA]);
-        }
-        gDPSetEnvColor(POLY_XLU_DISP++, envR, envG, envB, 0);
         gDPPipeSync(POLY_XLU_DISP++);
         Matrix_RotateZ((this->actor.shape.rot.z / (f32)0x8000) * 3.1416f, MTXMODE_APPLY);
         gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         gSPDisplayList(POLY_XLU_DISP++, gPhantomEnergyBallDL);
-        if (zopT > 0.3f) {
-            // Dark fractures: the ball once more, a bit smaller and turned, in a deep dark purple
-            Matrix_RotateZ(Rand_ZeroOne() * 2.0f * M_PI, MTXMODE_APPLY);
-            Matrix_Scale(0.85f, 0.85f, 1.0f, MTXMODE_APPLY);
-            gDPPipeSync(POLY_XLU_DISP++);
-            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, 40, 0, 60, (u8)((zopT - 0.3f) * 255.0f));
-            gDPSetEnvColor(POLY_XLU_DISP++, 20, 0, 40, 0);
-            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx),
-                      G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
-            gSPDisplayList(POLY_XLU_DISP++, gPhantomEnergyBallDL);
-        }
     } else if ((this->actor.params == FHGFIRE_WARP_EMERGE) || (this->actor.params == FHGFIRE_WARP_RETREAT) ||
                (this->actor.params == FHGFIRE_WARP_DEATH)) {
         Gfx_SetupDL_25Xlu(play->state.gfxCtx);
