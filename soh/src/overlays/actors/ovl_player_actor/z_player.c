@@ -4419,13 +4419,21 @@ void func_80837948(PlayState* play, Player* this, s32 arg2) {
         func_80832318(this);
     }
 
-    if ((arg2 != this->meleeWeaponAnimation) || !(this->unk_845 < 3)) {
-        this->unk_845 = 0;
-    }
+    // ZeldaOOTProject: repeated presses chain different swings into a combo (ModernControls.cpp)
+    s32 zopComboCounter;
+    s32 zopCombo = ZOP_SwordCombo(play, arg2, Player_IsZTargeting(this), &zopComboCounter);
+    if (zopCombo >= 0) {
+        arg2 = zopCombo;
+        this->unk_845 = zopComboCounter;
+    } else {
+        if ((arg2 != this->meleeWeaponAnimation) || !(this->unk_845 < 3)) {
+            this->unk_845 = 0;
+        }
 
-    this->unk_845++;
-    if (this->unk_845 >= 3) {
-        arg2 += 2;
+        this->unk_845++;
+        if (this->unk_845 >= 3) {
+            arg2 += 2;
+        }
     }
 
     this->meleeWeaponAnimation = arg2;
@@ -15058,7 +15066,16 @@ void Player_Action_808502D0(Player* this, PlayState* play) {
         Math_StepToF(&this->linearVelocity, 0.0f, 5.0f);
         func_8083C50C(this);
 
+        // ZeldaOOTProject: a sword press during the swing is remembered and starts the next combo swing once this
+        // one is over (no canceling, the swing always plays out)
+        if (CHECK_BTN_ALL(sControlInput->press.button, BTN_B)) {
+            ZOP_SwordComboBufferPress();
+        }
+
         if (LinkAnimation_Update(play, &this->skelAnime)) {
+            if (ZOP_SwordComboSwingEnded(play)) {
+                sUseHeldItem = true;
+            }
             if (!Player_ActionHandler_7(this, play)) {
                 u8 sp43 = this->skelAnime.movementFlags;
                 LinkAnimationHeader* sp3C;

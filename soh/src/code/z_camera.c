@@ -10,6 +10,7 @@
 #include "soh/Enhancements/controls/Mouse.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/Enhancements/savestate_serialize.h"
+#include "soh/Enhancements/ZeldaOOTProject/ZeldaOOTProjectHooks.h"
 
 s16 Camera_ChangeSettingFlags(Camera* camera, s16 setting, s16 flags);
 s32 Camera_RequestModeImpl(Camera* camera, s16 requestedMode, u8 forceModeChange);
@@ -1514,6 +1515,9 @@ s32 Camera_Free(Camera* camera) {
 
     newCamX *= (CVarGetFloat(CVAR_SETTING("FreeLook.CameraSensitivity.X"), 1.0f));
     newCamY *= (CVarGetFloat(CVAR_SETTING("FreeLook.CameraSensitivity.Y"), 1.0f));
+
+    // ZeldaOOTProject: softer free camera, finer at small stick deflections and easing in and out (ModernControls.cpp)
+    ZOP_SmoothFreeLook(&newCamX, &newCamY, camera->play->state.frames);
 
     bool invertXAxis = (CVarGetInteger(CVAR_SETTING("FreeLook.InvertXAxis"), 0) &&
                         !CVarGetInteger(CVAR_ENHANCEMENT("MirroredWorld"), 0)) ||

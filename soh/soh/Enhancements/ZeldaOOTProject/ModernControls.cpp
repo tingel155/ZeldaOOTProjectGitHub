@@ -5,6 +5,10 @@
 //   DrawWithoutSlash the first press of the sword button only draws the sword, the second one slashes (default 1)
 //   KeepNaviOut      Navi always flies next to Link; A no longer calls her in or out (default 1)
 //   ForceFPS         frame rate forced on every start (default 60, 0 = leave the setting alone)
+//   SwordCombos      repeated sword presses chain different swings, ending in a finisher (default 1)
+//   ComboWindow      game frames after a swing in which the next press still continues the combo (default 8)
+//   CameraSmoothing  share of the stick input the free camera follows per frame, 1 = instant (default 0.3)
+//   CameraCurve      0..1, how much small stick deflections are slowed down for fine aiming (default 0.5)
 //   PresetVersion    last applied version of the settings preset; the preset is applied once per version, so
 //                    later changes in the menus are kept
 //   ApplyPreset      set to 1 to apply the settings preset again (reset to 0 afterwards)
@@ -31,6 +35,8 @@
 #include "soh/cvar_prefixes.h"
 #include "ZeldaOOTProjectHooks.h"
 
+#include <algorithm>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -212,6 +218,120 @@ void ZOP_RegisterModernControls() {
 
 extern "C" int ZOP_KeepNaviOut(void) {
     return ControlsEnabled() && CVarGetInteger(CVAR_ZOP_CONTROLS("KeepNaviOut"), 1);
+}
+
+// --- Sword combos ---------------------------------------------------------------------------------------------------
+//
+// Each swing of a combo is one of the vanilla sword swings, played out completely. A press during a swing is
+// remembered and starts the next one when the swing ends; a press shortly after it (during the recovery) continues
+// the combo too. Locked on: vertical, right, left, then the big vertical finisher. Free: right, left, right, then the
+// spinning side finisher. Stabs, jump attacks, spin attacks and the hammer keep their vanilla behavior.
+
+namespace {
+
+constexpr int kComboLength = 4;
+const s8 kComboTargeted[kComboLength] = { PLAYER_MWA_FORWARD_SLASH_1H, PLAYER_MWA_RIGHT_SLASH_1H, PLAYER_MWA_LEFT_SLASH_1H,
+                                          PLAYER_MWA_FORWARD_COMBO_1H };
+const s8 kComboFree[kComboLength] = { PLAYER_MWA_RIGHT_SLASH_1H, PLAYER_MWA_LEFT_SLASH_1H, PLAYER_MWA_RIGHT_SLASH_1H,
+                                      PLAYER_MWA_RIGHT_COMBO_1H };
+
+int sComboStep = 0;          // swing of the combo the next chained press plays
+u32 sComboLastSwingEnd = 0;  // gameplay frame on which the last combo swing ended
+bool sComboSwingActive = false;
+bool sComboBuffered = false;
+
+bool SwordCombosEnabled() {
+    return ControlsEnabled() && CVarGetInteger(CVAR_ZOP_CONTROLS("SwordCombos"), 1);
+}
+
+// Basic one-handed slashes the combo is built from (two-handed variants are the odd entries right after them)
+bool IsBasicSlash(int attack1H) {
+    return attack1H == PLAYER_MWA_FORWARD_SLASH_1H || attack1H == PLAYER_MWA_RIGHT_SLASH_1H ||
+           attack1H == PLAYER_MWA_LEFT_SLASH_1H;
+}
+
+} // namespace
+
+extern "C" int ZOP_SwordCombo(PlayState* play, int attack, int zTargeting, int* comboCounter) {
+    sComboBuffered = false;
+    sComboSwingActive = false;
+    if (!SwordCombosEnabled() || attack < 0 || attack > PLAYER_MWA_LEFT_COMBO_2H) {
+        sComboStep = 0;
+        return -1;
+    }
+
+    int twoHanded = attack & 1;
+    int attack1H = attack & ~1;
+    if (!IsBasicSlash(attack1H)) {
+        sComboStep = 0;
+        return -1;
+    }
+
+    u32 window = (u32)CVarGetInteger(CVAR_ZOP_CONTROLS("ComboWindow"), 8);
+    bool chained = sComboStep > 0 && (u32)(play->gameplayFrames - sComboLastSwingEnd) <= window;
+    if (!chained) {
+        sComboStep = 0;
+    }
+
+    // The opening swing is the one vanilla picked (it follows the stick); the rest of the chain is fixed
+    int swing = sComboStep == 0 ? attack1H : (zTargeting ? kComboTargeted : kComboFree)[sComboStep];
+    bool finisher = sComboStep == kComboLength - 1;
+
+    *comboCounter = finisher ? 3 : 1;
+    sComboStep = finisher ? 0 : sComboStep + 1;
+    sComboSwingActive = true;
+    return swing + twoHanded;
+}
+
+extern "C" void ZOP_SwordComboBufferPress(void) {
+    if (sComboSwingActive) {
+        sComboBuffered = true;
+    }
+}
+
+extern "C" int ZOP_SwordComboSwingEnded(PlayState* play) {
+    if (!sComboSwingActive) {
+        return 0;
+    }
+    sComboSwingActive = false;
+    sComboLastSwingEnd = play->gameplayFrames;
+    bool buffered = sComboBuffered && sComboStep > 0;
+    sComboBuffered = false;
+    return buffered;
+}
+
+// --- Free camera smoothing ------------------------------------------------------------------------------------------
+
+extern "C" void ZOP_SmoothFreeLook(float* camX, float* camY, int frame) {
+    static float sVelX = 0.0f;
+    static float sVelY = 0.0f;
+    static int sLastFrame = 0;
+
+    if (!ControlsEnabled()) {
+        return;
+    }
+    // The camera was driven by something else in between: start from rest
+    if (frame - sLastFrame > 1) {
+        sVelX = sVelY = 0.0f;
+    }
+    sLastFrame = frame;
+
+    // Response curve: full stick (about 850 units) keeps its speed, small deflections get slower for fine control
+    float curve = std::clamp(CVarGetFloat(CVAR_ZOP_CONTROLS("CameraCurve"), 0.5f), 0.0f, 1.0f);
+    auto shape = [curve](float v) {
+        float n = std::min(std::fabs(v) / 850.0f, 1.0f);
+        return v * ((1.0f - curve) + curve * n);
+    };
+    float targetX = shape(*camX);
+    float targetY = shape(*camY);
+
+    // Ease toward the stick instead of following it instantly
+    float follow = std::clamp(CVarGetFloat(CVAR_ZOP_CONTROLS("CameraSmoothing"), 0.3f), 0.05f, 1.0f);
+    sVelX += (targetX - sVelX) * follow;
+    sVelY += (targetY - sVelY) * follow;
+
+    *camX = sVelX;
+    *camY = sVelY;
 }
 
 static RegisterShipInitFunc initFunc(ZOP_RegisterModernControls,

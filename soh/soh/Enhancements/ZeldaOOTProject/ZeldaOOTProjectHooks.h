@@ -45,6 +45,18 @@ int ZOP_IsGohmaLaser(short actorId);
 // out (ModernControls.cpp)
 int ZOP_KeepNaviOut(void);
 
+// z_player.c, func_80837948 (starting a sword swing): picks the next swing of a combo. attack is the swing vanilla
+// chose. Returns -1 when vanilla handles it, otherwise the swing to use and its combo counter (3 = finisher)
+// (ModernControls.cpp)
+int ZOP_SwordCombo(struct PlayState* play, int attack, int zTargeting, int* comboCounter);
+// z_player.c, sword swing action: a sword press during the swing / the swing animation ended. The latter returns
+// nonzero when a remembered press should start the next swing right away
+void ZOP_SwordComboBufferPress(void);
+int ZOP_SwordComboSwingEnded(struct PlayState* play);
+
+// z_camera.c, Camera_Free: softens the right-stick camera input (yaw/pitch deltas of this frame)
+void ZOP_SmoothFreeLook(float* camX, float* camY, int frame);
+
 // Testing aid: bosses skip straight to their phase 2 intro after the encounter cutscene (Difficulty.cpp)
 int ZOP_TestPhase2Intro(void);
 
