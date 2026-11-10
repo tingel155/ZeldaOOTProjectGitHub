@@ -153,27 +153,6 @@ static void BossGoma_UpdateShockwave(void) {
     }
 }
 
-// Boss health bar at the bottom of the screen (center)
-static s16 sZopBarMaxHealth;  // highest health seen (her health is scaled by the difficulty after Init)
-static f32 sZopBarShown;      // displayed health, eases down
-static f32 sZopBarChip;       // white "recent damage" part, follows a little later
-
-static Gfx sZopBarSetupDL[] = {
-    gsDPPipeSync(),
-    gsSPClearGeometryMode(G_ZBUFFER | G_SHADE | G_CULL_BOTH | G_FOG | G_LIGHTING | G_TEXTURE_GEN |
-                          G_TEXTURE_GEN_LINEAR | G_SHADING_SMOOTH | G_LOD),
-    gsDPSetOtherMode(G_AD_DISABLE | G_CD_MAGICSQ | G_CK_NONE | G_TC_FILT | G_TF_BILERP | G_TT_NONE | G_TL_TILE |
-                         G_TD_CLAMP | G_TP_NONE | G_CYC_1CYCLE | G_PM_1PRIMITIVE,
-                     G_AC_NONE | G_ZS_PIXEL | G_RM_CLD_SURF | G_RM_CLD_SURF2),
-    gsDPSetCombineMode(G_CC_PRIMITIVE, G_CC_PRIMITIVE),
-    gsSPEndDisplayList(),
-};
-
-#define BOSSGOMA_BAR_LEFT 90
-#define BOSSGOMA_BAR_RIGHT 230
-#define BOSSGOMA_BAR_TOP 214
-#define BOSSGOMA_BAR_BOTTOM 220
-
 // Flash of light on the eye when it opens (frames left)
 static s16 sZopEyeFlashTimer;
 #define BOSSGOMA_EYE_FLASH_FRAMES 12
@@ -315,7 +294,7 @@ static void BossGoma_SetHaze(PlayState* play, f32 intensity) {
 
 /**
  * Phase 2 cutscenes: hard cut to Link's face, he flinches in shock (shotFrame counts from the cut). Telephoto: far away
- * with a narrow field of view. The boss music kicks back in with his startle.
+ * with a narrow field of view.
  */
 static void BossGoma_CsLinkStartle(BossGoma* this, PlayState* play, s16 shotFrame) {
     Player* player = GET_PLAYER(play);
@@ -329,7 +308,6 @@ static void BossGoma_CsLinkStartle(BossGoma* this, PlayState* play, s16 shotFram
                              0.0f, Animation_GetLastFrame(gPlayerAnim_link_normal_backspace), ANIMMODE_ONCE, -3.0f);
         Audio_PlayActorSound2(&player->actor, LINK_IS_ADULT ? NA_SE_VO_LI_SURPRISE : NA_SE_VO_LI_SURPRISE_KID);
         Play_CameraSetFov(play, this->subCameraId, 16.0f);
-        Audio_QueueSeqCmd(SEQ_PLAYER_BGM_MAIN << 24 | NA_BGM_BOSS);
     }
     if (shotFrame < 7) {
         // Slide back about 20 units along the step
@@ -433,6 +411,8 @@ static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
         if (elapsed >= BOSSGOMA_PHASE2_EYE_OPEN_FRAME) {
             if (elapsed == BOSSGOMA_PHASE2_EYE_OPEN_FRAME) {
                 Audio_PlayActorSound2(&this->actor, NA_SE_EV_DIAMOND_SWITCH);
+                // The boss music kicks back in as her eye opens
+                Audio_QueueSeqCmd(SEQ_PLAYER_BGM_MAIN << 24 | NA_BGM_BOSS);
                 sZopEyeFlashTimer = BOSSGOMA_EYE_FLASH_FRAMES;
             }
             Math_ApproachS(&this->eyeLidBottomRotX, BOSSGOMA_EYE_LID_BOTTOM_WIDE, 1, 0x500);
@@ -550,6 +530,8 @@ static void BossGoma_Phase2FakeDeath(BossGoma* this, PlayState* play) {
         if (e >= BOSSGOMA_FD_EYE_OPEN) {
             if (e == BOSSGOMA_FD_EYE_OPEN) {
                 Audio_PlayActorSound2(&this->actor, NA_SE_EV_DIAMOND_SWITCH);
+                // The boss music kicks back in as her eye opens
+                Audio_QueueSeqCmd(SEQ_PLAYER_BGM_MAIN << 24 | NA_BGM_BOSS);
                 sZopEyeFlashTimer = BOSSGOMA_EYE_FLASH_FRAMES;
                 this->eyeIrisScaleX = this->eyeIrisScaleY = 1.6f;
             }
@@ -1068,9 +1050,6 @@ void BossGoma_Init(Actor* thisx, PlayState* play) {
     sZopBarrageCooldown = 0;
     sZopSlamIntoBarrage = false;
     sZopWaveAlpha = 0;
-    sZopBarMaxHealth = 0;
-    sZopBarShown = -1.0f;
-    sZopBarChip = -1.0f;
     // Undo a recolor left over from an earlier fight; the texture cache is flushed on the next draw
     ZOP_GohmaSetRecolor(0.0f);
     sZopRecolorDirty = true;
@@ -2837,27 +2816,6 @@ static void BossGoma_ZopEyeTest(BossGoma* this, PlayState* play) {
     this->eyeState = EYESTATE_IRIS_FOLLOW_NO_IFRAMES;
 }
 
-// Eases the health bar values (once per frame)
-static void BossGoma_UpdateHealthBar(BossGoma* this) {
-    s16 health = (s8)this->actor.colChkInfo.health;
-
-    if (health > sZopBarMaxHealth) {
-        sZopBarMaxHealth = health;
-    }
-    if (health < 0) {
-        health = 0;
-    }
-    if (sZopBarShown < 0.0f) {
-        sZopBarShown = sZopBarChip = health;
-    }
-    Math_ApproachF(&sZopBarShown, health, 0.5f, 1.0f);
-    if (sZopBarChip > sZopBarShown) {
-        Math_ApproachF(&sZopBarChip, sZopBarShown, 0.15f, 0.3f);
-    } else {
-        sZopBarChip = sZopBarShown;
-    }
-}
-
 void BossGoma_Update(Actor* thisx, PlayState* play) {
     BossGoma* this = (BossGoma*)thisx;
     s32 pad;
@@ -2892,7 +2850,6 @@ void BossGoma_Update(Actor* thisx, PlayState* play) {
         }
         this->actionFunc(this, play);
         BossGoma_UpdateShockwave();
-        BossGoma_UpdateHealthBar(this);
         return;
     }
 
@@ -2936,7 +2893,6 @@ void BossGoma_Update(Actor* thisx, PlayState* play) {
         sZopEyeFlashTimer--;
     }
     BossGoma_UpdateShockwave();
-    BossGoma_UpdateHealthBar(this);
     BossGoma_UpdateMainEnvColor(this);
     BossGoma_UpdateEyeEnvColor(this);
     BossGoma_UpdateTailLimbsScale(this);
@@ -3233,51 +3189,6 @@ void BossGoma_Draw(Actor* thisx, PlayState* play) {
         Matrix_Scale(size * 3.5f, size * 0.22f, 1.0f, MTXMODE_APPLY);
         gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
         gSPDisplayList(POLY_XLU_DISP++, gEffFlash1DL);
-    }
-
-    // Health bar: dark frame, white chip for recent damage, red fill (orange-red in phase 2) and a notch where the
-    // second phase starts. Hidden during the intro, the phase 2 cutscene and her death.
-    if (sZopBarMaxHealth > 0 && this->actionFunc != BossGoma_Encounter && this->actionFunc != BossGoma_Defeated &&
-        this->actionFunc != BossGoma_Phase2Roar && this->actionFunc != BossGoma_Phase2FakeDeath) {
-        s32 width = BOSSGOMA_BAR_RIGHT - BOSSGOMA_BAR_LEFT;
-        s32 fillX = BOSSGOMA_BAR_LEFT + (s32)(width * CLAMP(sZopBarShown / sZopBarMaxHealth, 0.0f, 1.0f));
-        s32 chipX = BOSSGOMA_BAR_LEFT + (s32)(width * CLAMP(sZopBarChip / sZopBarMaxHealth, 0.0f, 1.0f));
-        s32 notchX = BOSSGOMA_BAR_LEFT + (s32)(width * ZOP_BossPhase2At());
-
-        gDPPipeSync(OVERLAY_DISP++);
-        gSPDisplayList(OVERLAY_DISP++, sZopBarSetupDL);
-
-        gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 0, 0, 0, 170);
-        gDPFillRectangle(OVERLAY_DISP++, BOSSGOMA_BAR_LEFT - 2, BOSSGOMA_BAR_TOP - 2, BOSSGOMA_BAR_RIGHT + 2,
-                         BOSSGOMA_BAR_BOTTOM + 2);
-        gDPPipeSync(OVERLAY_DISP++);
-        gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 60, 20, 20, 220);
-        gDPFillRectangle(OVERLAY_DISP++, BOSSGOMA_BAR_LEFT, BOSSGOMA_BAR_TOP, BOSSGOMA_BAR_RIGHT, BOSSGOMA_BAR_BOTTOM);
-
-        if (chipX > fillX) {
-            gDPPipeSync(OVERLAY_DISP++);
-            gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 255, 245, 230, 230);
-            gDPFillRectangle(OVERLAY_DISP++, fillX, BOSSGOMA_BAR_TOP, chipX, BOSSGOMA_BAR_BOTTOM);
-        }
-        if (fillX > BOSSGOMA_BAR_LEFT) {
-            gDPPipeSync(OVERLAY_DISP++);
-            if (sZopPhase2Announced) {
-                u8 pulse = (u8)(200 + 55 * Math_SinS(this->frameCount * 0x800));
-                gDPSetPrimColor(OVERLAY_DISP++, 0, 0, pulse, 70, 20, 255);
-            } else {
-                gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 210, 30, 40, 255);
-            }
-            gDPFillRectangle(OVERLAY_DISP++, BOSSGOMA_BAR_LEFT, BOSSGOMA_BAR_TOP, fillX, BOSSGOMA_BAR_BOTTOM);
-            // light top edge
-            gDPPipeSync(OVERLAY_DISP++);
-            gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 255, 170, 150, 160);
-            gDPFillRectangle(OVERLAY_DISP++, BOSSGOMA_BAR_LEFT, BOSSGOMA_BAR_TOP, fillX, BOSSGOMA_BAR_TOP + 1);
-        }
-        if (!sZopPhase2Announced) {
-            gDPPipeSync(OVERLAY_DISP++);
-            gDPSetPrimColor(OVERLAY_DISP++, 0, 0, 255, 255, 255, 200);
-            gDPFillRectangle(OVERLAY_DISP++, notchX, BOSSGOMA_BAR_TOP - 2, notchX + 1, BOSSGOMA_BAR_BOTTOM + 2);
-        }
     }
 
     if (sZopWaveAlpha > 0) {
