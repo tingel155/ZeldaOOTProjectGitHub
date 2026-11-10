@@ -756,7 +756,10 @@ void EnGoma_Update(Actor* thisx, PlayState* play) {
             Collider_UpdateCylinder(&this->actor, &this->colCyl2);
             CollisionCheck_SetOC(play, &play->colChkCtx, &this->colCyl1.base);
             CollisionCheck_SetAC(play, &play->colChkCtx, &this->colCyl2.base);
-            CollisionCheck_SetAT(play, &play->colChkCtx, &this->colCyl1.base);
+            // ZeldaOOTProject: an egg doesn't hurt on touch, only a hatched larva does
+            if (!ZOP_DifficultyEnabled() || this->gomaType != ENGOMA_EGG) {
+                CollisionCheck_SetAT(play, &play->colChkCtx, &this->colCyl1.base);
+            }
         }
     }
 }

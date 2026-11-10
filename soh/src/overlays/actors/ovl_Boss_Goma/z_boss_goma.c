@@ -157,6 +157,15 @@ static void BossGoma_SetupLandingWave(void) {
     sZopWaveCanHit = true;
 }
 
+// Hop attack landings: smaller still, so a roll away gets Link out of reach
+static void BossGoma_SetupHopWave(void) {
+    sZopWaveMaxScale = 0.45f;
+    sZopWaveInner = 0.0f;
+    sZopWaveRadius = 120.0f;
+    sZopWaveDamage = 16;
+    sZopWaveCanHit = true;
+}
+
 // The big barrage / intro shockwave: only pushes
 static void BossGoma_SetupSlamWave(void) {
     sZopWaveMaxScale = 3.4f;
@@ -892,7 +901,7 @@ static void BossGoma_Hop(BossGoma* this, PlayState* play) {
                              ANIMMODE_ONCE, -2.0f);
             BossGoma_PlayEffectsAndSfx(this, play, 0, 6);
             Actor_RequestQuakeAndRumble(&this->actor, play, 5, 10);
-            BossGoma_SetupLandingWave();
+            BossGoma_SetupHopWave();
             BossGoma_SpawnShockwave(this, this->actor.world.pos.y);
             sZopHopsLeft--;
             sZopHopTimer = BOSSGOMA_HOP_PAUSE_FRAMES;
