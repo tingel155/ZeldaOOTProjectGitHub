@@ -114,6 +114,16 @@ static s16 sZopLidBaseBottom;
 static s16 sZopLidBaseTop;
 static u8 sZopLidBaseValid;
 
+// Phase 2 barrage attack: three quick eye flashes as a warning, a hard floor slam that throws Link far back, then she
+// fires lasers and arrow volleys at him while he fights his way back to her
+static s16 sZopBarrageCooldown;
+static u8 sZopSlamIntoBarrage;
+static s16 sZopBarrageShotTimer;
+static u8 sZopBarrageShots;
+#define BOSSGOMA_SIGNAL_FRAMES 36
+#define BOSSGOMA_BARRAGE_FRAMES 300
+#define BOSSGOMA_BARRAGE_REACHED_DIST 170.0f
+
 // Flash of light on the eye when it opens (frames left)
 static s16 sZopEyeFlashTimer;
 #define BOSSGOMA_EYE_FLASH_FRAMES 12
@@ -129,6 +139,10 @@ static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play);
 static void BossGoma_Phase2Slam(BossGoma* this, PlayState* play);
 static void BossGoma_SetupPhase2Roar(BossGoma* this, PlayState* play);
 static void BossGoma_Phase2FloorShoot(BossGoma* this, PlayState* play);
+static void BossGoma_Phase2Signal(BossGoma* this, PlayState* play);
+static void BossGoma_Phase2Barrage(BossGoma* this, PlayState* play);
+static void BossGoma_SetupPhase2Signal(BossGoma* this);
+static void BossGoma_SetupPhase2Barrage(BossGoma* this);
 void BossGoma_PlayEffectsAndSfx(BossGoma* this, PlayState* play, s16 arg2, s16 amountMinus1);
 void BossGoma_SetupFloorMain(BossGoma* this);
 
@@ -165,7 +179,14 @@ static void BossGoma_Phase2Slam(BossGoma* this, PlayState* play) {
                 Actor_RequestQuakeAndRumble(&this->actor, play, 14, 22);
                 Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_CRY1);
                 Actor_SpawnFloorDustRing(play, &this->actor, &this->actor.world.pos, 120.0f, 12, 10.0f, 800, 14, true);
-                Actor_SetPlayerKnockbackLargeNoDamage(play, &this->actor, 11.0f, this->actor.yawTowardsPlayer, 6.0f);
+                if (sZopSlamIntoBarrage) {
+                    // Barrage attack: Link flies a lot further, he has to fight his way back
+                    Actor_SetPlayerKnockbackLargeNoDamage(play, &this->actor, 17.0f, this->actor.yawTowardsPlayer,
+                                                          8.0f);
+                } else {
+                    Actor_SetPlayerKnockbackLargeNoDamage(play, &this->actor, 11.0f, this->actor.yawTowardsPlayer,
+                                                          6.0f);
+                }
                 this->actionState = 1;
                 this->framesUntilNextAction = 30; // Link lands and gets back up
             }
@@ -173,7 +194,13 @@ static void BossGoma_Phase2Slam(BossGoma* this, PlayState* play) {
 
         case 1:
             if (this->framesUntilNextAction == 0) {
-                BossGoma_SetupPhase2Roar(this, play);
+                if (sZopSlamIntoBarrage) {
+                    sZopSlamIntoBarrage = false;
+                    this->disableGameplayLogic = false;
+                    BossGoma_SetupPhase2Barrage(this);
+                } else {
+                    BossGoma_SetupPhase2Roar(this, play);
+                }
             }
             break;
     }
@@ -344,6 +371,7 @@ static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
         sZopFloorShootCooldown = 60;
 
         sZopEyeCycleFromRoar = true;
+        sZopBarrageCooldown = 200;
 
         // Out of patience: she backs off, climbs the nearest wall and starts shooting
         BossGoma_SetupFloorMain(this);
@@ -395,6 +423,81 @@ static void BossGoma_Phase2FloorShoot(BossGoma* this, PlayState* play) {
 
     this->eyeState = EYESTATE_IRIS_FOLLOW_NO_IFRAMES;
     this->visualState = VISUALSTATE_RED;
+}
+
+/**
+ * Phase 2 barrage, part 1: she stops and flashes her eye open three times in quick succession (three chimes) as a
+ * warning, then slams the floor (BossGoma_Phase2Slam, which continues with the barrage).
+ */
+static void BossGoma_SetupPhase2Signal(BossGoma* this) {
+    Animation_Change(&this->skelanime, &gGohmaStandAnim, 1.0f, 0.0f, Animation_GetLastFrame(&gGohmaStandAnim),
+                     ANIMMODE_LOOP, -6.0f);
+    this->actionFunc = BossGoma_Phase2Signal;
+    this->framesUntilNextAction = BOSSGOMA_SIGNAL_FRAMES;
+    this->actor.speedXZ = 0.0f;
+}
+
+static void BossGoma_Phase2Signal(BossGoma* this, PlayState* play) {
+    SkelAnime_Update(&this->skelanime);
+    Math_ApproachZeroF(&this->actor.speedXZ, 0.5f, 2.0f);
+    Math_ApproachS(&this->actor.shape.rot.x, 0, 2, 0xBB8);
+    Math_ApproachS(&this->actor.world.rot.y, this->actor.yawTowardsPlayer, 3, 0x7D0);
+    this->eyeState = EYESTATE_IRIS_FOLLOW_NO_IFRAMES;
+    this->visualState = VISUALSTATE_RED;
+
+    if (this->framesUntilNextAction == 0) {
+        sZopSlamIntoBarrage = true;
+        BossGoma_SetupPhase2Slam(this);
+    }
+}
+
+/**
+ * Phase 2 barrage, part 2: she stays where she is, turned toward Link, and keeps firing lasers and arrow volleys at
+ * him. Her eye follows the usual short open/shut cycle, so he can stun her on the way. Ends once he is back at her
+ * (or after a while).
+ */
+static void BossGoma_SetupPhase2Barrage(BossGoma* this) {
+    Animation_Change(&this->skelanime, &gGohmaStandAnim, 1.0f, 0.0f, Animation_GetLastFrame(&gGohmaStandAnim),
+                     ANIMMODE_LOOP, -8.0f);
+    this->actionFunc = BossGoma_Phase2Barrage;
+    this->framesUntilNextAction = BOSSGOMA_BARRAGE_FRAMES;
+    this->actor.speedXZ = 0.0f;
+    sZopBarrageShotTimer = 12;
+    sZopBarrageShots = 0;
+}
+
+static void BossGoma_Phase2Barrage(BossGoma* this, PlayState* play) {
+    SkelAnime_Update(&this->skelanime);
+    Math_ApproachZeroF(&this->actor.speedXZ, 0.5f, 2.0f);
+    Math_ApproachS(&this->actor.shape.rot.x, 0, 2, 0xBB8);
+    Math_ApproachS(&this->actor.world.rot.y, this->actor.yawTowardsPlayer, 4, 0x5DC);
+    this->eyeState = EYESTATE_IRIS_FOLLOW_NO_IFRAMES;
+    this->visualState = VISUALSTATE_RED;
+    this->patienceTimer = 200; // a slingshot hit in the open eye stuns her (BossGoma_UpdateHit)
+
+    if (--sZopBarrageShotTimer <= 0) {
+        // Every third shot a laser (if none is out), otherwise an arrow volley
+        if ((sZopBarrageShots % 3 == 0) && !ZOP_GohmaLaserActive(play)) {
+            ZOP_SpawnGohmaLaser(play, &this->actor);
+            sZopBarrageShotTimer = 40;
+        } else {
+            ZOP_SpawnPearlVolley(play, &this->actor, 4);
+            sZopBarrageShotTimer = 28;
+        }
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_CRY1);
+        sZopBarrageShots++;
+    }
+
+    if (this->actor.xzDistToPlayer < BOSSGOMA_BARRAGE_REACHED_DIST || this->framesUntilNextAction == 0) {
+        ZOP_StopGohmaLasers(play);
+        sZopBarrageCooldown = (s16)Rand_S16Offset(400, 200);
+        BossGoma_SetupFloorMain(this);
+        this->patienceTimer = 120;
+    }
+}
+
+static s32 BossGoma_LidsFollowAnim(BossGoma* this) {
+    return this->actionFunc == BossGoma_Encounter || this->actionFunc == BossGoma_Defeated;
 }
 
 const ActorInit Boss_Goma_InitVars = {
@@ -709,6 +812,8 @@ void BossGoma_Init(Actor* thisx, PlayState* play) {
     sZopEyeOpenFrames = 0;
     sZopEyeWasInCycle = false;
     sZopEyeCycleFromRoar = false;
+    sZopBarrageCooldown = 0;
+    sZopSlamIntoBarrage = false;
     // Undo a recolor left over from an earlier fight; the texture cache is flushed on the next draw
     ZOP_GohmaSetRecolor(0.0f);
     sZopRecolorDirty = true;
@@ -2020,6 +2125,13 @@ void BossGoma_FloorMain(BossGoma* this, PlayState* play) {
         if (this->patienceTimer > 220) {
             this->patienceTimer = 220;
         }
+        if (sZopBarrageCooldown > 0) {
+            sZopBarrageCooldown--;
+        } else if (sZopPhase2Announced && this->actor.xzDistToPlayer < 260.0f &&
+                   (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
+            BossGoma_SetupPhase2Signal(this);
+            return;
+        }
         if (sZopFloorShootCooldown > 0) {
             sZopFloorShootCooldown--;
         } else if (this->patienceTimer > 20 && this->actor.xzDistToPlayer > 160.0f &&
@@ -2187,7 +2299,7 @@ void BossGoma_UpdateEye(BossGoma* this, PlayState* play) {
             (this->actionFunc == BossGoma_FloorMain || this->actionFunc == BossGoma_FloorIdle ||
              this->actionFunc == BossGoma_FloorAttackPosture || this->actionFunc == BossGoma_FloorPrepareAttack ||
              this->actionFunc == BossGoma_FloorAttack || this->actionFunc == BossGoma_FloorLand ||
-             this->actionFunc == BossGoma_Phase2FloorShoot);
+             this->actionFunc == BossGoma_Phase2FloorShoot || this->actionFunc == BossGoma_Phase2Barrage);
 
         if (inCycle && !sZopEyeWasInCycle) {
             if (sZopEyeCycleFromRoar) {
@@ -2216,12 +2328,20 @@ void BossGoma_UpdateEye(BossGoma* this, PlayState* play) {
 
         // Phase 2: while her laser is out (also on the ceiling) and while she shoots from the floor the eye is fully
         // open and hittable, no blinking either. The open/shut cycle starts over with an open stretch.
-        if (sZopPhase2Announced && (ZOP_GohmaLaserActive(play) || this->actionFunc == BossGoma_Phase2FloorShoot)) {
+        if (sZopPhase2Announced && this->actionFunc != BossGoma_Phase2Barrage &&
+            (ZOP_GohmaLaserActive(play) || this->actionFunc == BossGoma_Phase2FloorShoot)) {
             this->eyeClosedTimer = 0;
             if (sZopEyeCycleClosed || sZopEyeCycleTimer < 24) {
                 sZopEyeCycleClosed = false;
                 sZopEyeCycleTimer = 24;
             }
+        }
+
+        // Barrage warning: three quick flashes of the open eye (open on frames 5-9, 15-19, 25-29)
+        if (this->actionFunc == BossGoma_Phase2Signal) {
+            s16 elapsed = BOSSGOMA_SIGNAL_FRAMES - this->framesUntilNextAction;
+
+            this->eyeClosedTimer = (elapsed >= 5 && elapsed < 30 && (elapsed % 10) >= 5) ? 0 : 2;
         }
 
         if (this->eyeClosedTimer != 0) {
@@ -2235,7 +2355,9 @@ void BossGoma_UpdateEye(BossGoma* this, PlayState* play) {
             Math_ApproachS(&this->eyeLidTopRotX, 0x1600, 1, 0x7D0);
         } else {
             // Phase 2: a crystal switch chime tells that the eye is open (and hittable) again
-            if (sZopPhase2Announced && sZopEyeClosedFrames >= BOSSGOMA_EYE_CHIME_MIN_CLOSED &&
+            if (sZopPhase2Announced &&
+                sZopEyeClosedFrames >=
+                    (this->actionFunc == BossGoma_Phase2Signal ? 3 : BOSSGOMA_EYE_CHIME_MIN_CLOSED) &&
                 this->actionFunc != BossGoma_Defeated) {
                 Audio_PlayActorSound2(&this->actor, NA_SE_EV_DIAMOND_SWITCH);
                 sZopEyeFlashTimer = BOSSGOMA_EYE_FLASH_FRAMES;
@@ -2558,11 +2680,14 @@ s32 BossGoma_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f
             break;
 
         case BOSSGOMA_LIMB_EYE_LID_BOTTOM_ROOT2:
-            rot->x = (sZopLidBaseValid ? sZopLidBaseBottom : rot->x) + this->eyeLidBottomRotX;
+            // The intro and defeat scenes rely on the animations' own lid motion (like vanilla)
+            rot->x = ((sZopLidBaseValid && !BossGoma_LidsFollowAnim(this)) ? sZopLidBaseBottom : rot->x) +
+                     this->eyeLidBottomRotX;
             break;
 
         case BOSSGOMA_LIMB_EYE_LID_TOP_ROOT2:
-            rot->x = (sZopLidBaseValid ? sZopLidBaseTop : rot->x) + this->eyeLidTopRotX;
+            rot->x = ((sZopLidBaseValid && !BossGoma_LidsFollowAnim(this)) ? sZopLidBaseTop : rot->x) +
+                     this->eyeLidTopRotX;
             break;
 
         case BOSSGOMA_LIMB_IRIS_ROOT2:
@@ -2748,7 +2873,7 @@ void BossGoma_Draw(Actor* thisx, PlayState* play) {
     {
         f32 recolor = 0.0f;
 
-        if (sZopPhase2Announced && this->actionFunc != BossGoma_Phase2Slam) {
+        if (sZopPhase2Announced && (this->actionFunc != BossGoma_Phase2Slam || sZopSlamIntoBarrage)) {
             recolor = 1.0f;
             if (this->actionFunc == BossGoma_Phase2Roar) {
                 recolor = (f32)(BOSSGOMA_PHASE2_ROAR_FRAMES - this->framesUntilNextAction) /
