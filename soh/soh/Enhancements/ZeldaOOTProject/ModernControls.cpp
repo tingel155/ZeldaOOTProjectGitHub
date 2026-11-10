@@ -15,6 +15,7 @@
 //   LockOnLeap       locked on, A with the stick forward only leaps toward the target; the sword button in the air
 //                    makes it the jump attack (default 1)
 //   LeapSpeed        forward speed of that leap (default 8)
+//   LockOnFraming    the lock-on camera pulls back and widens for bosses and high targets (default 1)
 //   CameraCurve      0..1, how much small stick deflections are slowed down for fine aiming (default 0.5)
 //   PresetVersion    last applied version of the settings preset; the preset is applied once per version, so
 //                    later changes in the menus are kept
@@ -334,6 +335,31 @@ extern "C" float ZOP_LockOnLeapSpeed(void) {
 
 extern "C" int ZOP_PlayerQuickTurn(void) {
     return ControlsEnabled() && CVarGetInteger(CVAR_ZOP_CONTROLS("QuickTurn"), 1);
+}
+
+// --- Lock-on camera framing ----------------------------------------------------------------------------------------
+
+extern "C" void ZOP_LockOnFraming(void* targetPtr, void* playerPosPtr, float playerHeight, float* distance,
+                                  float* fov) {
+    if (!ControlsEnabled() || !CVarGetInteger(CVAR_ZOP_CONTROLS("LockOnFraming"), 1) || targetPtr == nullptr) {
+        return;
+    }
+    Actor* target = (Actor*)targetPtr;
+    Vec3f* playerPos = (Vec3f*)playerPosPtr;
+
+    // How far the target is above Link's head: full effect at 350 units (Gohma on the ceiling)
+    float above = target->focus.pos.y - (playerPos->y + playerHeight);
+    float high = std::clamp(above / 350.0f, 0.0f, 1.0f);
+
+    float zoom = 1.0f + 0.7f * high;
+    float widen = 12.0f * high;
+    if (target->category == ACTORCAT_BOSS) {
+        zoom += 0.25f;
+        widen += 5.0f;
+    }
+
+    *distance *= zoom;
+    *fov += widen;
 }
 
 // --- Free camera smoothing ------------------------------------------------------------------------------------------

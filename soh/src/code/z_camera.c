@@ -2991,6 +2991,10 @@ s32 Camera_Battle1(Camera* camera) {
 
     sCameraInterfaceFlags = batt1->flags;
 
+    // ZeldaOOTProject: pull back and widen the view for bosses and targets high above Link, so both stay in frame
+    // (ModernControls.cpp)
+    ZOP_LockOnFraming(camera->target, &playerPosRot->pos, playerHeight, &distance, &fov);
+
     if (camera->animState == 0 || camera->animState == 0xA || camera->animState == 0x14) {
         anim->unk_14 = 0;
         anim->roll = 0.0f;

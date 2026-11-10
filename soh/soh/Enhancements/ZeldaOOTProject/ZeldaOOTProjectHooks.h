@@ -66,6 +66,10 @@ int ZOP_PlayerQuickTurn(void);
 int ZOP_LockOnLeap(void);
 float ZOP_LockOnLeapSpeed(void);
 
+// z_camera.c, Camera_Battle1 (lock-on camera): scales the camera distance and field of view for the target (an
+// Actor*); playerPos is a Vec3f* (ModernControls.cpp)
+void ZOP_LockOnFraming(void* target, void* playerPos, float playerHeight, float* distance, float* fov);
+
 // z_camera.c, Camera_Free: softens the right-stick camera input (yaw/pitch deltas of this frame)
 void ZOP_SmoothFreeLook(float* camX, float* camY, int frame);
 
