@@ -53,7 +53,7 @@ static void EnFhgFire_ZopRallyHit(EnFhgFire* this, PlayState* play, f32 tx, f32 
     f32 dy = ty - this->actor.world.pos.y;
     f32 dz = tz - this->actor.world.pos.z;
 
-    this->ZOP_SOUND_FREQ = CLAMP_MAX(0.7f + hits * 0.05f, 1.6f);
+    this->ZOP_SOUND_FREQ = CLAMP_MAX(0.7f + hits * 0.09f, 2.0f);
     this->ZOP_SOUND_FRAMES = ZOP_SOUND_LENGTH;
 
     // Late in a rally every hit gets more violent: from the 6th hit small sparks of the ball fly off into the dark,
@@ -101,7 +101,7 @@ static void EnFhgFire_ZopRallyHit(EnFhgFire* this, PlayState* play, f32 tx, f32 
                                     (s16)(6 + Rand_ZeroOne() * 3.0f), (s16)CLAMP_MAX(1 + hits / 5, 4));
         }
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_THUNDER);
-        ZOP_GndRallyFlash();
+        ZOP_GndRallyFlash(1.0f);
         if (hits >= 13) {
             Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_SPARK);
         }
@@ -760,6 +760,9 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                     if ((fabsf(dxPG) < 30.0f) && (fabsf(dzPG) < 30.0f) && (fabsf(dyPG) < 45.0f)) {
                         killMode = BALL_IMPACT;
                         bossGnd->returnCount = this->work[FHGFIRE_RETURN_COUNT] + 1;
+                        if (ZOP_DifficultyEnabled()) {
+                            ZOP_GndRallyFlash(1.8f); // Phantom Ganon is hit: one big bright flash
+                        }
                         Audio_PlaySfxGeneral(NA_SE_EN_FANTOM_HIT_THUNDER, &bossGnd->actor.projectedPos, 4,
                                              &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
                                              &gSfxDefaultReverb);

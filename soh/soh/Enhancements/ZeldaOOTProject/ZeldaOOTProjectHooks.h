@@ -89,8 +89,9 @@ int ZOP_Phase2IntroStyle(void);
 
 // Phantom Ganon rallies (GanondrofRally.cpp): the room lights up with the number of hits so far (0 = fade out)
 void ZOP_GndRallyGlow(int hits);
-// ... and flickers up brightly for a moment (hits in the lightning part of a rally)
-void ZOP_GndRallyFlash(void);
+// ... and flickers up brightly for a moment (hits in the lightning part of a rally, Phantom Ganon hit); strength 1 =
+// normal flash
+void ZOP_GndRallyFlash(float strength);
 
 // Testing aid: bosses skip straight to their phase 2 intro after the encounter cutscene (Difficulty.cpp)
 int ZOP_TestPhase2Intro(void);

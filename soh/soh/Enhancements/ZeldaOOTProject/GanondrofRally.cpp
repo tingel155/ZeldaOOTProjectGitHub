@@ -70,8 +70,8 @@ void Tick() {
 
 } // namespace
 
-extern "C" void ZOP_GndRallyFlash(void) {
-    sFlash = 1.0f;
+extern "C" void ZOP_GndRallyFlash(float strength) {
+    sFlash = std::max(sFlash, strength);
 }
 
 extern "C" void ZOP_GndRallyGlow(int hits) {
