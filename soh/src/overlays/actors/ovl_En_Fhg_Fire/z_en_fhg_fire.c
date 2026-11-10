@@ -17,9 +17,9 @@
 #define ZOP_GND_MIN_RETURNS 8
 #define ZOP_GND_MISS_CHANCE 0.25f
 #define ZOP_GND_SURE_MISS 14
-#define ZOP_GND_LINK_SPEEDUP 1.0f
-#define ZOP_GND_PHANTOM_SPEEDUP 1.5f
-#define ZOP_GND_MAX_SPEED 23.0f
+#define ZOP_GND_LINK_SPEEDUP 0.7f
+#define ZOP_GND_PHANTOM_SPEEDUP 1.0f
+#define ZOP_GND_MAX_SPEED 20.0f
 // A ball he throws on the fly (not in a volley) and Link hits back starts a rally this often; otherwise it hits him
 #define ZOP_GND_FREE_BALL_RALLY 0.9f
 
@@ -53,7 +53,7 @@ static void EnFhgFire_ZopRallyHit(EnFhgFire* this, f32 tx, f32 ty, f32 tz) {
     f32 dy = ty - this->actor.world.pos.y;
     f32 dz = tz - this->actor.world.pos.z;
 
-    this->ZOP_SOUND_FREQ = CLAMP_MAX(0.9f + hits * 0.05f, 1.8f);
+    this->ZOP_SOUND_FREQ = CLAMP_MAX(0.7f + hits * 0.05f, 1.6f);
     this->ZOP_SOUND_FRAMES = ZOP_SOUND_LENGTH;
     ZOP_GndRallyGlow(hits);
 
@@ -630,7 +630,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                                     bossGnd->returnSuccess = false;
                                     bossGnd->timers[0] = 100;
                                     this->work[FHGFIRE_RETURN_COUNT] = 1;
-                                    this->actor.speedXZ = 10.0f;
+                                    this->actor.speedXZ = 9.0f;
                                 } else {
                                     this->actor.speedXZ = 15.0f;
                                 }
@@ -651,7 +651,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                                 }
                                 // A spin attack hits it back harder, but no longer shortens the rally
                                 this->actor.speedXZ += (!canBottleReflect2 && (player->meleeWeaponAnimation >= 24))
-                                                           ? ZOP_GND_LINK_SPEEDUP + 1.0f
+                                                           ? ZOP_GND_LINK_SPEEDUP + 0.7f
                                                            : ZOP_GND_LINK_SPEEDUP;
                             } else {
                                 if ((this->work[FHGFIRE_RETURN_COUNT] > 3) && (Rand_ZeroOne() < 0.5f)) {

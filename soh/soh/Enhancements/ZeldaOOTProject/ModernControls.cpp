@@ -365,13 +365,30 @@ extern "C" void ZOP_LockOnFraming(void* targetPtr, void* playerPosPtr, float pla
 
     float zoom = 1.0f + 0.7f * high;
     float widen = 12.0f * high;
-    if (target->category == ACTORCAT_BOSS) {
+    if (target->id == ACTOR_BOSS_GANONDROF) {
+        // Phantom Ganon floats high above a fenced arena: pulling back puts the fence bars into view, so the camera
+        // stays close and widens its view instead (and stays up, ZOP_LockOnPitch)
+        zoom = 1.05f;
+        widen = 16.0f;
+    } else if (target->category == ACTORCAT_BOSS) {
         zoom += 0.25f;
         widen += 5.0f;
     }
 
     *distance *= zoom;
     *fov += widen;
+}
+
+extern "C" short ZOP_LockOnPitch(void* targetPtr, short pitch) {
+    if (!ControlsEnabled() || !CVarGetInteger(CVAR_ZOP_CONTROLS("LockOnFraming"), 1) || targetPtr == nullptr) {
+        return pitch;
+    }
+    Actor* target = (Actor*)targetPtr;
+    if (target->id == ACTOR_BOSS_GANONDROF) {
+        // At least about 10 degrees above Link, looking over him at Phantom Ganon instead of from below
+        return std::max<short>(pitch, 0x0700);
+    }
+    return pitch;
 }
 
 // --- Free camera smoothing ------------------------------------------------------------------------------------------

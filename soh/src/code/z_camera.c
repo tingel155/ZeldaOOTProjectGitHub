@@ -3104,6 +3104,8 @@ s32 Camera_Battle1(Camera* camera) {
         } else if (tmpAng1 > 0x2AA8) {
             tmpAng1 = 0x2AA8;
         }
+        // ZeldaOOTProject: some targets keep the camera from sinking low (ModernControls.cpp)
+        tmpAng1 = ZOP_LockOnPitch(camera->target, tmpAng1);
 
         spB4.pitch = Camera_LERPCeilS(tmpAng1, atToEyeNextDir.pitch, anim->unk_10, 0xA);
         Camera_Vec3fVecSphGeoAdd(eyeNext, at, &spB4);
