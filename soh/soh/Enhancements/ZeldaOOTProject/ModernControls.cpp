@@ -4,7 +4,8 @@
 //   Enabled          master switch for the hooks below (default 1)
 //   DrawWithoutSlash the first press of the sword button only draws the sword, the second one slashes (default 1)
 //   KeepNaviOut      Navi always flies next to Link; A no longer calls her in or out (default 1)
-//   ForceFPS         frame rate forced on every start (default 60, 0 = leave the setting alone)
+//   ForceFPS         frame rate forced on every start (default 20, the original rate; 0 = leave the setting alone)
+//   ForceN64Mode     N64 graphics mode (4:3, 240p) forced on every start (default 1, 0 = leave the setting alone)
 //   SwordCombos      repeated sword presses chain different swings, ending in a finisher (default 1)
 //   ComboWindow      game frames after a swing in which the next press still continues the combo (default 8)
 //   CameraSpeed      speed factor of the free camera on top of the menu sensitivity (default 1.5)
@@ -99,10 +100,13 @@ void ApplySettingsPreset() {
 }
 
 void ForceFrameRate() {
-    int fps = CVarGetInteger(CVAR_ZOP_CONTROLS("ForceFPS"), 60);
+    int fps = CVarGetInteger(CVAR_ZOP_CONTROLS("ForceFPS"), 20);
     if (fps > 0) {
         SetPresetInt(CVAR_SETTING("MatchRefreshRate"), 0);
         SetPresetInt(CVAR_SETTING("InterpolationFPS"), fps);
+    }
+    if (CVarGetInteger(CVAR_ZOP_CONTROLS("ForceN64Mode"), 1)) {
+        SetPresetInt(CVAR_LOW_RES_MODE, 1);
     }
 }
 
@@ -400,4 +404,5 @@ extern "C" void ZOP_SmoothFreeLook(float* camX, float* camY, int frame) {
 static RegisterShipInitFunc initFunc(ZOP_RegisterModernControls,
                                      { CVAR_ZOP_CONTROLS("Enabled"), CVAR_ZOP_CONTROLS("ApplyPreset"),
                                        CVAR_ZOP_CONTROLS("ApplyLayout"), CVAR_ZOP_CONTROLS("DrawWithoutSlash"),
-                                       CVAR_ZOP_CONTROLS("KeepNaviOut"), CVAR_ZOP_CONTROLS("ForceFPS") });
+                                       CVAR_ZOP_CONTROLS("KeepNaviOut"), CVAR_ZOP_CONTROLS("ForceFPS"),
+                                       CVAR_ZOP_CONTROLS("ForceN64Mode") });
