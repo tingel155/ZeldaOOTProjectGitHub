@@ -77,11 +77,9 @@ float ZOP_LockOnLeapSpeed(void);
 // Actor*); playerPos is a Vec3f* (ModernControls.cpp)
 void ZOP_LockOnFraming(void* target, void* playerPos, float playerHeight, float* distance, float* fov);
 
-// z_player.c, modern movement (ModernControls.cpp): A while moving jumps (FreeJump), its height and minimum speed;
-// i-frames of a roll; analog lock-on hops; air steering
-int ZOP_FreeJump(void);
-float ZOP_FreeJumpHeight(void);
-float ZOP_FreeJumpSpeed(void);
+// z_player.c, modern movement (ModernControls.cpp): A while moving rolls in the stick direction; i-frames of a roll;
+// analog lock-on hops; air steering
+int ZOP_DirectionalRoll(void);
 int ZOP_RollIFrames(void);
 int ZOP_AnalogDodge(void);
 int ZOP_AirControl(void);

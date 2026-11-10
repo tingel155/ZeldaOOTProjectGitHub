@@ -6325,34 +6325,23 @@ void Player_SetupRoll(Player* this, PlayState* play) {
 }
 
 /**
- * ZeldaOOTProject: A while moving (not locked on) jumps in the stick direction instead of rolling. Pressing A again in
- * the air rolls on landing (ModernControls.cpp).
+ * ZeldaOOTProject: A while moving (not locked on) rolls straight in the stick direction, whichever way Link faces
+ * (vanilla only rolls forward). The roll has i-frames (Player_SetupRoll) (ModernControls.cpp)
  */
-s32 Player_ZopTryFreeJump(Player* this, PlayState* play) {
-    if (!ZOP_FreeJump() || Player_IsZTargeting(this) || (sFloorType == 7) ||
+s32 Player_ZopTryDirectionalRoll(Player* this, PlayState* play) {
+    if (!ZOP_DirectionalRoll() || Player_IsZTargeting(this) || (sFloorType == 7) ||
         (this->stateFlags1 & (PLAYER_STATE1_IN_WATER | PLAYER_STATE1_CARRYING_ACTOR | PLAYER_STATE1_ON_HORSE)) ||
         (sControlStickMagnitude < 12.0f)) {
         return false;
     }
 
-    func_80838940(this, &gPlayerAnim_link_normal_jump, ZOP_FreeJumpHeight(), play, NA_SE_VO_LI_AUTO_JUMP);
     this->yaw = this->actor.shape.rot.y = this->actor.world.rot.y = sControlStickWorldYaw;
-    this->linearVelocity = CLAMP_MIN(this->linearVelocity, ZOP_FreeJumpSpeed());
+    Player_SetupRoll(this, play);
     return true;
 }
 
-/**
- * ZeldaOOTProject: the roll queued in the air, as Link lands; it goes the way the stick points
- */
-void Player_ZopLandingRoll(Player* this, PlayState* play) {
-    if (sControlStickMagnitude > 12.0f) {
-        this->yaw = this->actor.shape.rot.y = this->actor.world.rot.y = sControlStickWorldYaw;
-    }
-    Player_SetupRoll(this, play);
-}
-
 s32 Player_TryRoll(Player* this, PlayState* play) {
-    if (Player_ZopTryFreeJump(this, play)) {
+    if (Player_ZopTryDirectionalRoll(this, play)) {
         return true;
     }
 

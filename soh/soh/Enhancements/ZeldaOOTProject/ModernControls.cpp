@@ -17,10 +17,7 @@
 //                    makes it the jump attack (default 1)
 //   LeapSpeed        forward speed of that leap (default 8)
 //   LockOnFraming    the lock-on camera pulls back and widens for bosses and high targets (default 1)
-//   FreeJump         A while moving (not locked on) jumps in the stick direction; A again in the air rolls on landing
-//                    (default 1)
-//   JumpHeight       upward speed of that jump (default 6.5)
-//   JumpSpeed        minimum forward speed of that jump (default 6)
+//   DirectionalRoll  A while moving (not locked on) rolls straight in the stick direction (default 1)
 //   RollIFrames      frames a roll can't be hurt (default 10, 0 = off)
 //   AnalogDodge      locked-on hops and flips go exactly where the stick points (default 1)
 //   AirControl       steer in the air almost like on the ground (default 1)
@@ -61,7 +58,6 @@ extern "C" {
 #include "variables.h"
 #include "macros.h"
 extern PlayState* gPlayState;
-void Player_ZopLandingRoll(Player* player, PlayState* play);
 }
 
 #define CVAR_ZOP_CONTROLS(name) "gZOP.Controls." name
@@ -234,45 +230,10 @@ void ZOP_RegisterModernControls() {
             player->stateFlags2 |= PLAYER_STATE2_NAVI_ACTIVE;
         }
     });
-
-    // Jump, then roll: A pressed in the air queues a roll that starts the moment Link lands
-    COND_HOOK(OnPlayerUpdate, ZOP_FreeJump(), []() {
-        static bool sRollQueued = false;
-        static bool sWasAirborne = false;
-        Player* player = GET_PLAYER(gPlayState);
-        if (player == nullptr) {
-            return;
-        }
-        bool airborne = !(player->actor.bgCheckFlags & BGCHECKFLAG_GROUND);
-        bool jumping = (player->stateFlags1 & PLAYER_STATE1_JUMPING) != 0;
-        // Only a press while already in the air counts (the press that started the jump comes on the takeoff frame)
-        if (airborne && sWasAirborne && jumping && CHECK_BTN_ALL(gPlayState->state.input[0].press.button, BTN_A)) {
-            sRollQueued = true;
-        }
-        sWasAirborne = airborne;
-        if (sRollQueued && !airborne) {
-            sRollQueued = false;
-            if (!(player->stateFlags1 & (PLAYER_STATE1_IN_WATER | PLAYER_STATE1_DAMAGED | PLAYER_STATE1_DEAD |
-                                         PLAYER_STATE1_IN_CUTSCENE | PLAYER_STATE1_CARRYING_ACTOR))) {
-                Player_ZopLandingRoll(player, gPlayState);
-            }
-        }
-        if (!airborne && !jumping) {
-            sRollQueued = false;
-        }
-    });
 }
 
-extern "C" int ZOP_FreeJump(void) {
-    return ControlsEnabled() && CVarGetInteger(CVAR_ZOP_CONTROLS("FreeJump"), 1);
-}
-
-extern "C" float ZOP_FreeJumpHeight(void) {
-    return CVarGetFloat(CVAR_ZOP_CONTROLS("JumpHeight"), 6.5f);
-}
-
-extern "C" float ZOP_FreeJumpSpeed(void) {
-    return CVarGetFloat(CVAR_ZOP_CONTROLS("JumpSpeed"), 6.0f);
+extern "C" int ZOP_DirectionalRoll(void) {
+    return ControlsEnabled() && CVarGetInteger(CVAR_ZOP_CONTROLS("DirectionalRoll"), 1);
 }
 
 extern "C" int ZOP_RollIFrames(void) {
@@ -464,4 +425,4 @@ static RegisterShipInitFunc initFunc(ZOP_RegisterModernControls,
                                      { CVAR_ZOP_CONTROLS("Enabled"), CVAR_ZOP_CONTROLS("ApplyPreset"),
                                        CVAR_ZOP_CONTROLS("ApplyLayout"), CVAR_ZOP_CONTROLS("DrawWithoutSlash"),
                                        CVAR_ZOP_CONTROLS("KeepNaviOut"), CVAR_ZOP_CONTROLS("ForceFPS"),
-                                       CVAR_ZOP_CONTROLS("ForceN64Mode"), CVAR_ZOP_CONTROLS("FreeJump") });
+                                       CVAR_ZOP_CONTROLS("ForceN64Mode") });
