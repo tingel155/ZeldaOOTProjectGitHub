@@ -11,6 +11,8 @@
 
 #include <libultraship/bridge/consolevariablebridge.h>
 
+#include <algorithm>
+
 #include "soh/ActorDB.h"
 #include "soh/ShipInit.hpp"
 #include "NayrusLove.h"
@@ -29,10 +31,11 @@ using namespace NayrusLove;
 
 namespace {
 
-constexpr int kLaunchFrames = 8;     // flies straight along its fan direction before homing
-constexpr float kStopHomingDist = 110.0f;
-constexpr float kTurnRate = 0.13f;
-constexpr int kFlyFrames = 100;
+constexpr int kLaunchFrames = 6;     // flies straight along its fan direction before homing
+constexpr float kStopHomingDist = 55.0f; // keeps steering until it is almost at Link
+constexpr float kTurnRate = 0.16f;
+constexpr int kFlyFrames = 150;
+constexpr float kLeadFactor = 0.6f; // how much of Link's movement the arrows aim ahead for
 constexpr int kStuckFrames = 50;
 constexpr int kStuckFadeFrames = 15;
 constexpr float kLength = 30.0f;
@@ -45,7 +48,15 @@ constexpr float kArcGravity = 0.7f;
 constexpr int kHoverRiseFrames = 14;
 constexpr float kHoverHeight = 110.0f;
 constexpr float kHoverRadius = 55.0f;
-constexpr float kDashSpeed = 24.0f;
+constexpr float kDashSpeed = 28.0f;
+
+// Where Link will be after `frames` frames if he keeps moving like now (capped, scaled by kLeadFactor)
+V3 PredictLink(Player* player, float frames) {
+    V3 waist = { player->bodyPartsPos[PLAYER_BODYPART_WAIST].x, player->bodyPartsPos[PLAYER_BODYPART_WAIST].y,
+                 player->bodyPartsPos[PLAYER_BODYPART_WAIST].z };
+    frames = std::min(frames, 20.0f) * kLeadFactor;
+    return { waist.x + player->actor.velocity.x * frames, waist.y, waist.z + player->actor.velocity.z * frames };
+}
 
 struct PearlArrow {
     Actor actor;
@@ -112,9 +123,9 @@ void PearlArrow_Init(Actor* thisx, PlayState* play) {
         t = self->pos;
     }
     // Every arrow gets its own pace: some drift in slowly, some streak at Link
-    self->speed = 5.0f + Rand_ZeroOne() * 4.0f;
-    self->maxSpeed = 10.0f + Rand_ZeroOne() * 13.0f;
-    self->accel = 0.35f + Rand_ZeroOne() * 0.75f;
+    self->speed = 6.0f + Rand_ZeroOne() * 4.0f;
+    self->maxSpeed = 12.0f + Rand_ZeroOne() * 12.0f;
+    self->accel = 0.45f + Rand_ZeroOne() * 0.75f;
     self->hue = Rand_ZeroOne();
     self->roll = (s16)(Rand_ZeroOne() * 0xFFFF);
     self->timer = 0;
@@ -134,17 +145,29 @@ void PearlArrow_Init(Actor* thisx, PlayState* play) {
     switch (self->mode) {
         case MODE_STRAIGHT:
             self->homing = false;
-            self->speed = 9.0f;
-            self->maxSpeed = 17.0f + Rand_ZeroOne() * 3.0f;
-            self->accel = 0.8f;
+            self->speed = 10.0f;
+            self->maxSpeed = 19.0f + Rand_ZeroOne() * 3.0f;
+            self->accel = 0.9f;
+            {
+                // Aimed where Link is heading, keeping the bundle's fan offset
+                V3 lead = PredictLink(player, 15.0f) - ToV3(player->bodyPartsPos[PLAYER_BODYPART_WAIST]);
+                V3 aim = ToV3(player->bodyPartsPos[PLAYER_BODYPART_WAIST]) + lead - self->pos;
+                float len = sqrtf(Dot(aim, aim));
+                if (len > 1.0f) {
+                    self->dir = Normalize(self->dir + Normalize(aim) * 1.5f);
+                }
+            }
             break;
 
         case MODE_ARC: {
             // Ballistic throw that lands near Link after T frames
             float t = 28.0f + Rand_ZeroOne() * 12.0f;
             float angle = Rand_ZeroOne() * 2.0f * kPi;
-            float off = Rand_ZeroOne() * 50.0f;
-            V3 target = { linkPos.x + sinf(angle) * off, linkPos.y + 10.0f, linkPos.z + cosf(angle) * off };
+            float off = Rand_ZeroOne() * 25.0f;
+            // Lands where Link will be if he keeps running, plus a little scatter
+            V3 ahead = { linkPos.x + player->actor.velocity.x * t * kLeadFactor, linkPos.y,
+                         linkPos.z + player->actor.velocity.z * t * kLeadFactor };
+            V3 target = { ahead.x + sinf(angle) * off, ahead.y + 10.0f, ahead.z + cosf(angle) * off };
             V3 d = target - self->pos;
             self->vel = { d.x / t, (d.y + 0.5f * kArcGravity * t * t) / t, d.z / t };
             self->dir = Normalize(self->vel);
@@ -216,7 +239,7 @@ void PearlArrow_Update(Actor* thisx, PlayState* play) {
                 self->dir = Normalize(self->dir + (Normalize(toTarget) - self->dir) * 0.35f);
             } else {
                 if (self->timer == self->dashAt) {
-                    self->dir = Normalize(toTarget);
+                    self->dir = Normalize(PredictLink(player, dist / kDashSpeed) - self->pos);
                     Vec3f pos = { self->pos.x, self->pos.y, self->pos.z };
                     SoundSource_PlaySfxAtFixedWorldPos(play, &pos, 15, NA_SE_IT_MAGIC_ARROW_SHOT);
                 }
@@ -226,7 +249,9 @@ void PearlArrow_Update(Actor* thisx, PlayState* play) {
 
         default: // homing and straight
             if (self->homing && self->timer > kLaunchFrames) {
-                self->dir = Normalize(self->dir + (Normalize(toTarget) - self->dir) * kTurnRate);
+                // Steers toward where Link is heading, not where he is
+                V3 toLead = PredictLink(player, dist / std::max(self->speed, 1.0f)) - self->pos;
+                self->dir = Normalize(self->dir + (Normalize(toLead) - self->dir) * kTurnRate);
                 if (dist < kStopHomingDist) {
                     // Commit to the current heading: close enough to be dodged by side-stepping or rolling
                     self->homing = false;

@@ -271,7 +271,7 @@ static void BossGoma_Phase2Slam(BossGoma* this, PlayState* play) {
                 }
                 this->actionState = 1;
                 // Link lands and gets back up; in the fake death intro she collapses while the wave still rolls
-                this->framesUntilNextAction = (!sZopSlamIntoBarrage && ZOP_Phase2IntroStyle() == 1) ? 4 : 30;
+                this->framesUntilNextAction = (!sZopSlamIntoBarrage && ZOP_Phase2IntroStyle() == 1) ? 14 : 30;
             }
             break;
 
