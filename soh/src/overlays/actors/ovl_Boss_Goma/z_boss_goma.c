@@ -2259,6 +2259,19 @@ void BossGoma_UpdateEyeEnvColor(BossGoma* this) {
     Math_ApproachF(&this->eyeEnvColor[2], targetEyeEnvColors[this->visualState][2], 0.5f, 20.0f);
 }
 
+// Collider elements, in the order of sColliderJntSphElementInit
+#define BOSSGOMA_COLLIDER_EYE 0
+#define BOSSGOMA_COLLIDER_L_ANTENNA_CLAW 8
+#define BOSSGOMA_COLLIDER_R_ANTENNA_CLAW 9
+
+static void BossGoma_SetTouch(BossGoma* this, s32 element, s32 on) {
+    if (on) {
+        this->collider.elements[element].info.toucherFlags |= TOUCH_ON;
+    } else {
+        this->collider.elements[element].info.toucherFlags &= ~TOUCH_ON;
+    }
+}
+
 void BossGoma_Update(Actor* thisx, PlayState* play) {
     BossGoma* this = (BossGoma*)thisx;
     s32 pad;
@@ -2306,6 +2319,11 @@ void BossGoma_Update(Actor* thisx, PlayState* play) {
 
         if (this->actionFunc != BossGoma_FloorStunned && this->actionFunc != BossGoma_FloorDamaged &&
             (this->actionFunc != BossGoma_FloorMain || this->timer == 0)) {
+            // ZeldaOOTProject: no contact damage from the front. The eye never hurts on touch (Link stands right at
+            // it to hit it), and the antenna claws only hurt while they actually strike. Legs and tail still do.
+            BossGoma_SetTouch(this, BOSSGOMA_COLLIDER_EYE, false);
+            BossGoma_SetTouch(this, BOSSGOMA_COLLIDER_L_ANTENNA_CLAW, this->actionFunc == BossGoma_FloorAttack);
+            BossGoma_SetTouch(this, BOSSGOMA_COLLIDER_R_ANTENNA_CLAW, this->actionFunc == BossGoma_FloorAttack);
             CollisionCheck_SetAT(play, &play->colChkCtx, &this->collider.base);
         }
     }
