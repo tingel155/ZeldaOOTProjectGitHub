@@ -36,6 +36,11 @@
 #define ZOP_ARC_TARGET_Y fwork[FHGFIRE_WARP_TEX_2_X]
 #define ZOP_ARC_TARGET_Z fwork[FHGFIRE_WARP_TEX_2_Y]
 #define ZOP_ARC_FLAT_END 0.8f // the last 20% of the way are straight, so the ball comes in where it is aimed
+#define ZOP_GND_ARCS 0         // curved flight paths (off for now)
+// The charge sound only plays while it is triggered every frame (like in the Twinrova fight): frames left, pitch
+#define ZOP_SOUND_FRAMES fwork[FHGFIRE_WARP_TEX_SPEED]
+#define ZOP_SOUND_FREQ fwork[FHGFIRE_WARP_ALPHA]
+#define ZOP_SOUND_LENGTH 16
 
 /**
  * ZeldaOOTProject: one more hit in a rally. The Mirror Shield charge sound (Twinrova fight), rising in level and pitch
@@ -43,19 +48,13 @@
  * ever higher arcs and sideways swings.
  */
 static void EnFhgFire_ZopRallyHit(EnFhgFire* this, f32 tx, f32 ty, f32 tz) {
-    static f32 sFreq;
-    static f32 sVolume = 1.0f;
-    static s8 sReverb = 0;
     s16 hits = ++this->ZOP_RALLY_HITS;
     f32 dx = tx - this->actor.world.pos.x;
     f32 dy = ty - this->actor.world.pos.y;
     f32 dz = tz - this->actor.world.pos.z;
 
-    sFreq = CLAMP_MAX(0.9f + hits * 0.05f, 1.8f);
-    Audio_PlaySfxGeneral((hits <= 5)    ? (NA_SE_IT_SHIELD_CHARGE_LV1 & ~SFX_FLAG)
-                         : (hits <= 10) ? (NA_SE_IT_SHIELD_CHARGE_LV2 & ~SFX_FLAG)
-                                        : (NA_SE_IT_SHIELD_CHARGE_LV3 & ~SFX_FLAG),
-                         &this->actor.projectedPos, 4, &sFreq, &sVolume, &sReverb);
+    this->ZOP_SOUND_FREQ = CLAMP_MAX(0.9f + hits * 0.05f, 1.8f);
+    this->ZOP_SOUND_FRAMES = ZOP_SOUND_LENGTH;
     ZOP_GndRallyGlow(hits);
 
     this->ZOP_ARC_TOTAL = sqrtf(SQ(dx) + SQ(dy) + SQ(dz));
@@ -65,10 +64,29 @@ static void EnFhgFire_ZopRallyHit(EnFhgFire* this, f32 tx, f32 ty, f32 tz) {
     this->ZOP_ARC_TARGET_X = tx;
     this->ZOP_ARC_TARGET_Y = ty;
     this->ZOP_ARC_TARGET_Z = tz;
-    this->ZOP_ARC_HEIGHT = (hits >= 3) ? CLAMP_MAX(hits - 2, 10) * 16.0f : 0.0f;
-    this->ZOP_ARC_SIDE =
-        (hits >= 6) ? ((Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f) * CLAMP_MAX(hits - 5, 10) * 11.0f : 0.0f;
+    this->ZOP_ARC_HEIGHT = (ZOP_GND_ARCS && (hits >= 3)) ? CLAMP_MAX(hits - 2, 10) * 16.0f : 0.0f;
+    this->ZOP_ARC_SIDE = (ZOP_GND_ARCS && (hits >= 6))
+                             ? ((Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f) * CLAMP_MAX(hits - 5, 10) * 11.0f
+                             : 0.0f;
     this->ZOP_ARC_PERP_YAW = (f32)(s16)(Math_FAtan2F(dx, dz) * (0x8000 / M_PI) + 0x4000);
+}
+
+// Keeps the rally hit sound going for a moment after each hit
+static void EnFhgFire_ZopRallySound(EnFhgFire* this) {
+    static f32 sFreq;
+    static f32 sVolume = 1.0f;
+    static s8 sReverb = 0;
+    s16 hits = this->ZOP_RALLY_HITS;
+
+    if (this->ZOP_SOUND_FRAMES <= 0.0f) {
+        return;
+    }
+    this->ZOP_SOUND_FRAMES -= 1.0f;
+    sFreq = this->ZOP_SOUND_FREQ;
+    Audio_PlaySfxGeneral((hits <= 5)    ? (NA_SE_IT_SHIELD_CHARGE_LV1 & ~SFX_FLAG)
+                         : (hits <= 10) ? (NA_SE_IT_SHIELD_CHARGE_LV2 & ~SFX_FLAG)
+                                        : (NA_SE_IT_SHIELD_CHARGE_LV3 & ~SFX_FLAG),
+                         &gSfxDefaultPos, 4, &sFreq, &sVolume, &sReverb);
 }
 
 // Moves the ball along its current curve (the offsets come back to zero on arrival)
@@ -543,6 +561,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
         Actor_UpdatePos(&this->actor);
         if (ZOP_DifficultyEnabled()) {
             EnFhgFire_ZopRallyArc(this);
+            EnFhgFire_ZopRallySound(this);
         }
         if (this->work[FHGFIRE_VARIANCE_TIMER] & 1) {
             Actor_SetScale(&this->actor, 6.0f);
