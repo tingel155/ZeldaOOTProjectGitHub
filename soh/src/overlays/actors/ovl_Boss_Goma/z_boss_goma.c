@@ -91,6 +91,10 @@ static s16 sZopEyeCycleTimer;
 static s16 sZopEyeClosedFrames; // how long the eye has been shut, so short blinks don't chime
 #define BOSSGOMA_EYE_CHIME_MIN_CLOSED 15
 
+// Flash of light on the eye when it opens (frames left)
+static s16 sZopEyeFlashTimer;
+#define BOSSGOMA_EYE_FLASH_FRAMES 12
+
 static s32 BossGoma_InPhase2(BossGoma* this) {
     return ZOP_BossPhase2(&this->actor, 10);
 }
@@ -630,6 +634,7 @@ void BossGoma_Init(Actor* thisx, PlayState* play) {
     sZopEyeCycleClosed = false;
     sZopEyeCycleTimer = 60;
     sZopEyeClosedFrames = 0;
+    sZopEyeFlashTimer = 0;
     // Undo a recolor left over from an earlier fight; the texture cache is flushed on the next draw
     ZOP_GohmaSetRecolor(0.0f);
     sZopRecolorDirty = true;
@@ -2118,6 +2123,16 @@ void BossGoma_UpdateEye(BossGoma* this, PlayState* play) {
             }
         }
 
+        // Phase 2: while her laser is out the eye is fully open and hittable, also on the ceiling (no blinking
+        // either). The open/shut cycle starts over with an open stretch.
+        if (sZopPhase2Announced && ZOP_GohmaLaserActive(play)) {
+            this->eyeClosedTimer = 0;
+            if (sZopEyeCycleClosed || sZopEyeCycleTimer < 40) {
+                sZopEyeCycleClosed = false;
+                sZopEyeCycleTimer = 40;
+            }
+        }
+
         if (this->eyeClosedTimer != 0) {
             this->eyeClosedTimer--;
             if (sZopEyeClosedFrames < 0x7FFF) {
@@ -2131,6 +2146,7 @@ void BossGoma_UpdateEye(BossGoma* this, PlayState* play) {
             if (sZopPhase2Announced && sZopEyeClosedFrames >= BOSSGOMA_EYE_CHIME_MIN_CLOSED &&
                 this->actionFunc != BossGoma_Defeated) {
                 Audio_PlayActorSound2(&this->actor, NA_SE_EV_DIAMOND_SWITCH);
+                sZopEyeFlashTimer = BOSSGOMA_EYE_FLASH_FRAMES;
             }
             sZopEyeClosedFrames = 0;
             // open eye
@@ -2344,6 +2360,9 @@ void BossGoma_Update(Actor* thisx, PlayState* play) {
     }
 
     BossGoma_UpdateEye(this, play);
+    if (sZopEyeFlashTimer > 0) {
+        sZopEyeFlashTimer--;
+    }
     BossGoma_UpdateMainEnvColor(this);
     BossGoma_UpdateEyeEnvColor(this);
     BossGoma_UpdateTailLimbsScale(this);
@@ -2607,6 +2626,29 @@ void BossGoma_Draw(Actor* thisx, PlayState* play) {
     }
 
     SkelAnime_DrawSkeletonOpa(play, &this->skelanime, BossGoma_OverrideLimbDraw, BossGoma_PostLimbDraw, this);
+
+    // Phase 2: a short lens flare on the eye when it opens: a round glow and a wide horizontal streak
+    if (sZopEyeFlashTimer > 0) {
+        f32 t = (f32)sZopEyeFlashTimer / BOSSGOMA_EYE_FLASH_FRAMES; // 1 -> 0
+        f32 grow = 1.0f - t;
+        f32 size = (0.35f + 0.65f * Math_SinF(grow * 3.14159265f)) * 0.09f;
+        u8 alpha = (u8)(255.0f * CLAMP(t * 1.6f, 0.0f, 1.0f));
+
+        Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0x80, 255, 255, 235, alpha);
+        gDPSetEnvColor(POLY_XLU_DISP++, 140, 230, 255, 0);
+
+        Matrix_Translate(this->actor.focus.pos.x, this->actor.focus.pos.y, this->actor.focus.pos.z, MTXMODE_NEW);
+        Matrix_Mult(&play->billboardMtxF, MTXMODE_APPLY);
+        Matrix_Push();
+        Matrix_Scale(size, size, 1.0f, MTXMODE_APPLY);
+        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_XLU_DISP++, gEffFlash1DL);
+        Matrix_Pop();
+        Matrix_Scale(size * 3.5f, size * 0.22f, 1.0f, MTXMODE_APPLY);
+        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_XLU_DISP++, gEffFlash1DL);
+    }
 
     CLOSE_DISPS(play->state.gfxCtx);
 }

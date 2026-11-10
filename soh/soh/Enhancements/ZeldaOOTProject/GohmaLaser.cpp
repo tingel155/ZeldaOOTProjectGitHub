@@ -278,6 +278,15 @@ static void StopLasersOnDeath() {
     }
 }
 
+extern "C" int ZOP_GohmaLaserActive(PlayState* play) {
+    for (Actor* actor = play->actorCtx.actorLists[ACTORCAT_ITEMACTION].head; actor != nullptr; actor = actor->next) {
+        if (actor->id == sLaserActorId && actor->update != nullptr) {
+            return true;
+        }
+    }
+    return false;
+}
+
 extern "C" int ZOP_IsGohmaLaser(short actorId) {
     return sLaserActorId >= 0 && actorId == sLaserActorId;
 }
