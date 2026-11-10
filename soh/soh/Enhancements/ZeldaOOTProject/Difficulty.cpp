@@ -34,7 +34,8 @@ static bool IsAffectedEnemy(s16 actorId) {
         case ACTOR_EN_GOMA: // Gohma Larvae and their eggs
             return true;
         default:
-            return ZOP_IsPearlArrow(actorId) || ZOP_IsGohmaLaser(actorId); // Gohma's phase 2 attacks
+            return ZOP_IsPearlArrow(actorId) || ZOP_IsGohmaLaser(actorId) ||
+                   ZOP_IsGohmaFloorLane(actorId); // Gohma's phase 2 attacks
     }
 }
 

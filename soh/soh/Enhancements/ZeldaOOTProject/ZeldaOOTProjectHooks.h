@@ -44,6 +44,10 @@ void ZOP_StopGohmaLasers(struct PlayState* play);
 int ZOP_IsGohmaLaser(short actorId);
 int ZOP_GohmaLaserActive(struct PlayState* play);
 
+// Gohma phase 2: glowing rifts racing over the floor from (x, y, z), fanned around yaw (GohmaFloorLanes.cpp)
+void ZOP_SpawnGohmaFloorLanes(struct PlayState* play, void* shooter, float x, float y, float z, short yaw, int count);
+int ZOP_IsGohmaFloorLane(short actorId);
+
 // z_player.c / z_en_elf.c: nonzero when Navi always flies next to Link and the A button no longer calls her in or
 // out (ModernControls.cpp)
 int ZOP_KeepNaviOut(void);

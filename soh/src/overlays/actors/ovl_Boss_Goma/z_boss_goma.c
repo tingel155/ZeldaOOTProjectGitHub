@@ -124,6 +124,9 @@ static s16 sZopBarrageCooldown;
 static u8 sZopSlamIntoBarrage;
 static s16 sZopBarrageShotTimer;
 static u8 sZopBarrageShots;
+static s16 sZopBarrageSlamTimer; // frames until the floor slam of the barrage lands (0 = none)
+static u8 sZopBarrageSlamAnim;   // the slam animation is playing (back to standing when it ends)
+#define BOSSGOMA_BARRAGE_SLAM_IMPACT 10 // frame of gGohmaAttackAnim where her claws hit the floor
 #define BOSSGOMA_SIGNAL_FRAMES 28
 #define BOSSGOMA_BARRAGE_TRIGGER_DIST 380.0f // she starts it when Link is closer than this
 #define BOSSGOMA_SLAM_WAVE_RADIUS 520.0f     // the shockwave throws Link back within this distance
@@ -135,6 +138,8 @@ static Vec3f sZopWavePos;
 static f32 sZopWaveScale;
 static s16 sZopWaveAlpha;
 static s16 sZopWaveTimer;
+
+static u8 sZopWaveCanHit; // the barrage shockwave throws Link back when its ring reaches him on the ground
 
 static void BossGoma_SpawnShockwave(BossGoma* this, f32 floorY) {
     sZopWavePos = this->actor.world.pos;
@@ -221,10 +226,8 @@ static void BossGoma_Phase2Slam(BossGoma* this, PlayState* play) {
                     // (no damage), and has to fight his way back
                     BossGoma_SpawnShockwave(this, this->actor.world.pos.y);
                     Actor_SpawnFloorDustRing(play, &this->actor, &sZopWavePos, 200.0f, 20, 12.0f, 1000, 20, true);
-                    if (this->actor.xzDistToPlayer < BOSSGOMA_SLAM_WAVE_RADIUS) {
-                        Actor_SetPlayerKnockbackLargeNoDamage(play, &this->actor, 17.0f,
-                                                              this->actor.yawTowardsPlayer, 8.0f);
-                    }
+                    // The ring itself throws Link back once it reaches him, unless he jumps over it
+                    sZopWaveCanHit = true;
                 } else {
                     // Phase 2 intro: the same shockwave opens some distance before the cutscene
                     BossGoma_SpawnShockwave(this, this->actor.world.pos.y);
@@ -719,6 +722,8 @@ static void BossGoma_SetupPhase2Barrage(BossGoma* this) {
     this->actor.speedXZ = 0.0f;
     sZopBarrageShotTimer = 12;
     sZopBarrageShots = 0;
+    sZopBarrageSlamTimer = 0;
+    sZopBarrageSlamAnim = false;
 }
 
 static void BossGoma_Phase2Barrage(BossGoma* this, PlayState* play) {
@@ -730,16 +735,46 @@ static void BossGoma_Phase2Barrage(BossGoma* this, PlayState* play) {
     this->visualState = VISUALSTATE_RED;
     this->patienceTimer = 200; // a slingshot hit in the open eye stuns her (BossGoma_UpdateHit)
 
+    // Floor slam: her claws hit the floor at a spot in front of her and glowing rifts race toward Link from there
+    if (sZopBarrageSlamTimer > 0 && --sZopBarrageSlamTimer == 0) {
+        s16 yaw = this->actor.shape.rot.y;
+        f32 side = Rand_CenteredFloat(260.0f);
+        Vec3f spot;
+
+        spot.x = this->actor.world.pos.x + Math_SinS(yaw) * 110.0f + Math_SinS(yaw + 0x4000) * side;
+        spot.y = this->actor.world.pos.y;
+        spot.z = this->actor.world.pos.z + Math_CosS(yaw) * 110.0f + Math_CosS(yaw + 0x4000) * side;
+        BossGoma_PlayEffectsAndSfx(this, play, 3, 5);
+        Actor_RequestQuakeAndRumble(&this->actor, play, 8, 12);
+        Actor_SpawnFloorDustRing(play, &this->actor, &spot, 50.0f, 10, 6.0f, 500, 12, true);
+        ZOP_SpawnGohmaFloorLanes(play, &this->actor, spot.x, spot.y, spot.z,
+                                 Math_Vec3f_Yaw(&spot, &GET_PLAYER(play)->actor.world.pos), 3);
+    }
+    if (sZopBarrageSlamAnim && Animation_OnFrame(&this->skelanime, Animation_GetLastFrame(&gGohmaAttackAnim))) {
+        sZopBarrageSlamAnim = false;
+        Animation_Change(&this->skelanime, &gGohmaStandAnim, 1.0f, 0.0f, Animation_GetLastFrame(&gGohmaStandAnim),
+                         ANIMMODE_LOOP, -6.0f);
+    }
+
     if (--sZopBarrageShotTimer <= 0) {
-        // Every third shot a laser (if none is out), otherwise an arrow volley
-        if ((sZopBarrageShots % 3 == 0) && !ZOP_GohmaLaserActive(play)) {
+        // A cycle of laser (if none is out), arrow volley and two floor slams
+        u8 kind = sZopBarrageShots % 4;
+
+        if (kind == 0 && !ZOP_GohmaLaserActive(play)) {
             ZOP_SpawnGohmaLaserTimed(play, &this->actor, BOSSGOMA_FLOOR_LASER_FIRE_FRAMES);
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_CRY1);
             sZopBarrageShotTimer = 40;
+        } else if (kind == 2 || kind == 3) {
+            Animation_Change(&this->skelanime, &gGohmaAttackAnim, 1.3f, 0.0f,
+                             Animation_GetLastFrame(&gGohmaAttackAnim), ANIMMODE_ONCE, -4.0f);
+            sZopBarrageSlamTimer = (s16)(BOSSGOMA_BARRAGE_SLAM_IMPACT / 1.3f) + 1;
+            sZopBarrageSlamAnim = true;
+            sZopBarrageShotTimer = 30;
         } else {
             ZOP_SpawnPearlVolley(play, &this->actor, 4);
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_CRY1);
             sZopBarrageShotTimer = 28;
         }
-        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_CRY1);
         sZopBarrageShots++;
     }
 
@@ -1069,6 +1104,7 @@ void BossGoma_Init(Actor* thisx, PlayState* play) {
     sZopBarrageCooldown = 0;
     sZopSlamIntoBarrage = false;
     sZopWaveAlpha = 0;
+    sZopWaveCanHit = false;
     sZopHitFlash = 0;
     // Undo a recolor left over from an earlier fight; the texture cache is flushed on the next draw
     ZOP_GohmaSetRecolor(0.0f);
@@ -2840,7 +2876,8 @@ void BossGoma_Update(Actor* thisx, PlayState* play) {
     s32 pad;
 
     // Testing aid 2: Gohma stands in front of Link at half health and starts the phase 2 intro right away
-    if (ZOP_TestGohmaEye() == 2) {
+    // Testing aid 3: the same, but she skips the intro and starts her barrage attack
+    if (ZOP_TestGohmaEye() == 2 || ZOP_TestGohmaEye() == 3) {
         static u8 sZopFdTestStarted = false;
 
         if (this->actionFunc == BossGoma_Encounter || !sZopFdTestStarted) {
@@ -2856,7 +2893,12 @@ void BossGoma_Update(Actor* thisx, PlayState* play) {
             this->actor.gravity = -2.0f;
             this->actor.colChkInfo.health = (u8)CLAMP_MIN(this->actor.colChkInfo.health / 2, 1);
             sZopPhase2Announced = true;
-            BossGoma_SetupPhase2Slam(this);
+            if (ZOP_TestGohmaEye() == 3) {
+                this->disableGameplayLogic = false;
+                BossGoma_SetupPhase2Signal(this);
+            } else {
+                BossGoma_SetupPhase2Slam(this);
+            }
         }
     } else if (ZOP_TestGohmaEye()) {
         if (this->actionFunc != BossGoma_ZopEyeTest) {
@@ -2912,6 +2954,21 @@ void BossGoma_Update(Actor* thisx, PlayState* play) {
         sZopEyeFlashTimer--;
     }
     BossGoma_UpdateShockwave();
+    if (sZopWaveCanHit) {
+        // The ring band runs from 150x to 300x its scale (like Ganondorf's shockwave). Link only gets caught while he
+        // stands on the ground, so a jump at the right moment (backflip, forward hop) clears it.
+        Player* player = GET_PLAYER(play);
+        f32 dist = Math_Vec3f_DistXZ(&sZopWavePos, &player->actor.world.pos);
+
+        if (sZopWaveAlpha <= 0 || sZopWaveScale * 150.0f > BOSSGOMA_SLAM_WAVE_RADIUS) {
+            sZopWaveCanHit = false;
+        } else if (dist >= sZopWaveScale * 150.0f && dist <= sZopWaveScale * 300.0f &&
+                   dist < BOSSGOMA_SLAM_WAVE_RADIUS && (player->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
+            sZopWaveCanHit = false;
+            Actor_SetPlayerKnockbackLargeNoDamage(play, &this->actor, 17.0f,
+                                                  Math_Vec3f_Yaw(&sZopWavePos, &player->actor.world.pos), 8.0f);
+        }
+    }
     if (sZopHitFlash > 0) {
         // Full right away, then fading out; cleared on the last frame
         sZopHitFlash--;
