@@ -3674,7 +3674,7 @@ void Player_UpdateShapeYaw(Player* this, PlayState* play) {
             Math_ScaledStepToS(&this->actor.shape.rot.y, this->parallelYaw, 4000);
         }
     } else if (!(this->stateFlags2 & PLAYER_STATE2_DISABLE_ROTATION_ALWAYS)) {
-        Math_ScaledStepToS(&this->actor.shape.rot.y, this->yaw, 2000);
+        Math_ScaledStepToS(&this->actor.shape.rot.y, this->yaw, ZOP_PlayerTurnRate(2000));
     }
 
     this->unk_87C = this->actor.shape.rot.y - previousYaw;
@@ -6527,6 +6527,12 @@ s32 func_8083C484(Player* this, f32* arg1, s16* arg2) {
     s16 yaw = this->yaw - *arg2;
 
     if (ABS(yaw) > 0x6000) {
+        // ZeldaOOTProject: turn around in a few frames, keeping part of the speed (ModernControls.cpp)
+        if (ZOP_PlayerQuickTurn()) {
+            this->linearVelocity *= 0.5f;
+            Math_ScaledStepToS(&this->yaw, *arg2, 0x3000);
+            return 0;
+        }
         if (Player_DecelerateToZero(this)) {
             *arg1 = 0.0f;
             *arg2 = this->yaw;
@@ -7136,8 +7142,9 @@ void func_8083DDC8(Player* this, PlayState* play) {
 }
 
 void func_8083DF68(Player* this, f32 arg1, s16 arg2) {
-    Math_AsymStepToF(&this->linearVelocity, arg1, REG(19) / 100.0f, 1.5f);
-    Math_ScaledStepToS(&this->yaw, arg2, REG(27));
+    // ZeldaOOTProject: snappier running, faster acceleration and turning (ModernControls.cpp)
+    Math_AsymStepToF(&this->linearVelocity, arg1, ZOP_PlayerAccel(REG(19) / 100.0f), 1.5f);
+    Math_ScaledStepToS(&this->yaw, arg2, ZOP_PlayerTurnRate(REG(27)));
 }
 
 void func_8083DFE0(Player* this, f32* arg1, s16* arg2) {

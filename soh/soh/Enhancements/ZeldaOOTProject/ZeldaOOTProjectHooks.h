@@ -54,6 +54,12 @@ int ZOP_SwordCombo(struct PlayState* play, int attack, int zTargeting, int* comb
 void ZOP_SwordComboBufferPress(void);
 int ZOP_SwordComboSwingEnded(struct PlayState* play);
 
+// z_player.c: snappier running. Scales a turn rate (binary angle per frame) / an acceleration step; quick turn is
+// nonzero when sharp turns should spin Link around instead of braking to a stop first (ModernControls.cpp)
+short ZOP_PlayerTurnRate(short vanillaRate);
+float ZOP_PlayerAccel(float vanillaAccel);
+int ZOP_PlayerQuickTurn(void);
+
 // z_camera.c, Camera_Free: softens the right-stick camera input (yaw/pitch deltas of this frame)
 void ZOP_SmoothFreeLook(float* camX, float* camY, int frame);
 

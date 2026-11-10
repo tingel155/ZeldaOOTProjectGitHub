@@ -8,7 +8,10 @@
 //   SwordCombos      repeated sword presses chain different swings, ending in a finisher (default 1)
 //   ComboWindow      game frames after a swing in which the next press still continues the combo (default 8)
 //   CameraSpeed      speed factor of the free camera on top of the menu sensitivity (default 1.5)
-//   CameraSmoothing  share of the stick input the free camera follows per frame, 1 = instant (default 0.3)
+//   CameraSmoothing  share of the stick input the free camera follows per frame, 1 = instant (default 0.55)
+//   TurnSpeed        factor on how fast Link turns while running and how fast his body follows (default 2.5)
+//   Acceleration     factor on how fast Link speeds up when running off (default 1.5)
+//   QuickTurn        sharp turns spin Link around in a few frames instead of braking to a stop first (default 1)
 //   CameraCurve      0..1, how much small stick deflections are slowed down for fine aiming (default 0.5)
 //   PresetVersion    last applied version of the settings preset; the preset is applied once per version, so
 //                    later changes in the menus are kept
@@ -301,6 +304,27 @@ extern "C" int ZOP_SwordComboSwingEnded(PlayState* play) {
     return buffered;
 }
 
+// --- Snappier running ----------------------------------------------------------------------------------------------
+
+extern "C" short ZOP_PlayerTurnRate(short vanillaRate) {
+    if (!ControlsEnabled()) {
+        return vanillaRate;
+    }
+    float rate = vanillaRate * CVarGetFloat(CVAR_ZOP_CONTROLS("TurnSpeed"), 2.5f);
+    return (short)std::clamp(rate, 0.0f, 16000.0f);
+}
+
+extern "C" float ZOP_PlayerAccel(float vanillaAccel) {
+    if (!ControlsEnabled()) {
+        return vanillaAccel;
+    }
+    return vanillaAccel * CVarGetFloat(CVAR_ZOP_CONTROLS("Acceleration"), 1.5f);
+}
+
+extern "C" int ZOP_PlayerQuickTurn(void) {
+    return ControlsEnabled() && CVarGetInteger(CVAR_ZOP_CONTROLS("QuickTurn"), 1);
+}
+
 // --- Free camera smoothing ------------------------------------------------------------------------------------------
 
 extern "C" void ZOP_SmoothFreeLook(float* camX, float* camY, int frame) {
@@ -328,7 +352,7 @@ extern "C" void ZOP_SmoothFreeLook(float* camX, float* camY, int frame) {
     float targetY = shape(*camY) * speed;
 
     // Ease toward the stick instead of following it instantly
-    float follow = std::clamp(CVarGetFloat(CVAR_ZOP_CONTROLS("CameraSmoothing"), 0.3f), 0.05f, 1.0f);
+    float follow = std::clamp(CVarGetFloat(CVAR_ZOP_CONTROLS("CameraSmoothing"), 0.55f), 0.05f, 1.0f);
     sVelX += (targetX - sVelX) * follow;
     sVelY += (targetY - sVelY) * follow;
 
