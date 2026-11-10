@@ -6314,13 +6314,48 @@ s32 func_8083BBA0(Player* this, PlayState* play) {
 
 void Player_SetupRoll(Player* this, PlayState* play) {
     Player_SetupAction(play, this, Player_Action_Roll, 0);
+    // ZeldaOOTProject: a roll dodges hits for a few frames (ModernControls.cpp)
+    if (ZOP_RollIFrames() > 0) {
+        Player_SetInvulnerability(this, -ZOP_RollIFrames());
+    }
     LinkAnimation_PlayOnceSetSpeed(play, &this->skelAnime,
                                    GET_PLAYER_ANIM(PLAYER_ANIMGROUP_landing_roll, this->modelAnimType),
                                    1.25f * sWaterSpeedFactor);
     gSaveContext.ship.stats.count[COUNT_ROLLS]++;
 }
 
+/**
+ * ZeldaOOTProject: A while moving (not locked on) jumps in the stick direction instead of rolling. Pressing A again in
+ * the air rolls on landing (ModernControls.cpp).
+ */
+s32 Player_ZopTryFreeJump(Player* this, PlayState* play) {
+    if (!ZOP_FreeJump() || Player_IsZTargeting(this) || (sFloorType == 7) ||
+        (this->stateFlags1 & (PLAYER_STATE1_IN_WATER | PLAYER_STATE1_CARRYING_ACTOR | PLAYER_STATE1_ON_HORSE)) ||
+        (sControlStickMagnitude < 12.0f)) {
+        return false;
+    }
+
+    func_80838940(this, &gPlayerAnim_link_normal_jump, ZOP_FreeJumpHeight(), play, NA_SE_VO_LI_AUTO_JUMP);
+    this->yaw = this->actor.shape.rot.y = this->actor.world.rot.y = sControlStickAngle;
+    this->linearVelocity = CLAMP_MIN(this->linearVelocity, ZOP_FreeJumpSpeed());
+    return true;
+}
+
+/**
+ * ZeldaOOTProject: the roll queued in the air, as Link lands; it goes the way the stick points
+ */
+void Player_ZopLandingRoll(Player* this, PlayState* play) {
+    if (sControlStickMagnitude > 12.0f) {
+        this->yaw = this->actor.shape.rot.y = this->actor.world.rot.y = sControlStickAngle;
+    }
+    Player_SetupRoll(this, play);
+}
+
 s32 Player_TryRoll(Player* this, PlayState* play) {
+    if (Player_ZopTryFreeJump(this, play)) {
+        return true;
+    }
+
     if ((this->controlStickDirections[this->controlStickDataIndex] == 0) && (sFloorType != 7)) {
         Player_SetupRoll(this, play);
 
@@ -6341,6 +6376,11 @@ void func_8083BCD0(Player* this, PlayState* play, s32 controlStickDirection) {
 
     this->yaw = this->actor.shape.rot.y + (controlStickDirection << 0xE);
     this->linearVelocity = !(controlStickDirection & 1) ? 6.0f : 8.5f;
+    // ZeldaOOTProject: the animation follows the main direction, but the hop goes exactly where the stick points
+    // (back and a bit right: a backflip drifting right) (ModernControls.cpp)
+    if (ZOP_AnalogDodge() && (sControlStickMagnitude > 12.0f)) {
+        this->yaw = sControlStickAngle;
+    }
 
     this->stateFlags2 |= PLAYER_STATE2_HOPPING;
 
@@ -7170,6 +7210,10 @@ void func_8083DFE0(Player* this, f32* arg1, s16* arg2) {
         if (Math_StepToF(&this->linearVelocity, 0.0f, 1.0f)) {
             this->yaw = *arg2;
         }
+    } else if (ZOP_AirControl()) {
+        // ZeldaOOTProject: steer in the air almost like on the ground, for precise landings (ModernControls.cpp)
+        Math_AsymStepToF(&this->linearVelocity, *arg1, 0.6f, 0.5f);
+        Math_ScaledStepToS(&this->yaw, *arg2, 1600);
     } else {
         Math_AsymStepToF(&this->linearVelocity, *arg1, 0.05f, 0.1f);
         Math_ScaledStepToS(&this->yaw, *arg2, 200);

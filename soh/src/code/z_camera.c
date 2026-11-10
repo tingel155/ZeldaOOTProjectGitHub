@@ -1527,6 +1527,9 @@ s32 Camera_Free(Camera* camera) {
     camera->play->camX += newCamX * (invertXAxis ? -1 : 1);
     camera->play->camY += newCamY * (CVarGetInteger(CVAR_SETTING("FreeLook.InvertYAxis"), 1) ? 1 : -1);
 
+    // ZeldaOOTProject: soft targeting keeps turning the camera toward the boss (SoftTargeting.cpp)
+    ZOP_SoftTargetSteerCamera(&camera->play->camX, &camera->play->camY, newCamX, newCamY);
+
     if (camera->play->camY > 0x32A4) {
         camera->play->camY = 0x32A4;
     }

@@ -77,6 +77,19 @@ float ZOP_LockOnLeapSpeed(void);
 // Actor*); playerPos is a Vec3f* (ModernControls.cpp)
 void ZOP_LockOnFraming(void* target, void* playerPos, float playerHeight, float* distance, float* fov);
 
+// z_player.c, modern movement (ModernControls.cpp): A while moving jumps (FreeJump), its height and minimum speed;
+// i-frames of a roll; analog lock-on hops; air steering
+int ZOP_FreeJump(void);
+float ZOP_FreeJumpHeight(void);
+float ZOP_FreeJumpSpeed(void);
+int ZOP_RollIFrames(void);
+int ZOP_AnalogDodge(void);
+int ZOP_AirControl(void);
+
+// z_camera.c, Camera_Free: soft targeting turns the free camera toward the boss (camX/camY are play->camX/camY, the
+// stick deltas of this frame tell whether the player is turning the camera himself) (SoftTargeting.cpp)
+void ZOP_SoftTargetSteerCamera(float* camX, float* camY, float inputX, float inputY);
+
 // z_camera.c, Camera_Free: softens the right-stick camera input (yaw/pitch deltas of this frame)
 void ZOP_SmoothFreeLook(float* camX, float* camY, int frame);
 
