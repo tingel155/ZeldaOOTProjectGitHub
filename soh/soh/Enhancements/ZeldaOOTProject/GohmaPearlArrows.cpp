@@ -1,8 +1,12 @@
 // Gohma phase 2: pearl magic arrows.
 //
-// While brooding on the ceiling in her second phase, Gohma fires volleys of pearl shards (same look as the Nayru's
-// Love burst). Each arrow fans out first, then homes in on Link, but stops steering once it is close so it can be
-// dodged. Arrows stick into floor and walls, shatter on Link or his shield.
+// In her second phase Gohma fires volleys of pearl shards (same look as the Nayru's Love burst). Each volley picks
+// one way to fly:
+//   homing    fan out, then curve in on Link, but stop steering once close so they can be dodged
+//   straight  a tight bundle shot right at Link, fast and without steering
+//   arc       lobbed in a high arc, coming down around Link
+//   hover     rise above Gohma's head and hang there aiming, then dart at Link one after another
+// Arrows stick into floor and walls, shatter on Link or his shield.
 
 #include <libultraship/bridge/consolevariablebridge.h>
 
@@ -33,6 +37,13 @@ constexpr float kLength = 30.0f;
 constexpr float kWidth = 6.0f;
 
 enum ArrowState : u8 { ARROW_FLYING, ARROW_STUCK };
+enum ArrowMode : u8 { MODE_HOMING, MODE_STRAIGHT, MODE_ARC, MODE_HOVER, MODE_COUNT };
+
+constexpr float kArcGravity = 0.7f;
+constexpr int kHoverRiseFrames = 14;
+constexpr float kHoverHeight = 110.0f;
+constexpr float kHoverRadius = 55.0f;
+constexpr float kDashSpeed = 24.0f;
 
 struct PearlArrow {
     Actor actor;
@@ -48,6 +59,10 @@ struct PearlArrow {
     s16 timer;
     ArrowState state;
     bool homing;
+    ArrowMode mode;
+    V3 vel;      // arc: ballistic velocity
+    V3 hoverPos; // hover: where it waits above Gohma
+    s16 dashAt;  // hover: frame on which it darts off
 };
 
 s16 sArrowActorId = -1;
@@ -104,6 +119,53 @@ void PearlArrow_Init(Actor* thisx, PlayState* play) {
     self->state = ARROW_FLYING;
     self->homing = true;
 
+    // params: bits 0-3 index in the volley, 4-7 volley size, 8-11 flight mode
+    int index = thisx->params & 0xF;
+    int count = (thisx->params >> 4) & 0xF;
+    self->mode = (ArrowMode)((thisx->params >> 8) & 0xF);
+    if (count == 0) {
+        count = 1;
+    }
+    Player* player = GET_PLAYER(play);
+    V3 linkPos = ToV3(player->actor.world.pos);
+
+    switch (self->mode) {
+        case MODE_STRAIGHT:
+            self->homing = false;
+            self->speed = 9.0f;
+            self->maxSpeed = 17.0f + Rand_ZeroOne() * 3.0f;
+            self->accel = 0.8f;
+            break;
+
+        case MODE_ARC: {
+            // Ballistic throw that lands near Link after T frames
+            float t = 28.0f + Rand_ZeroOne() * 12.0f;
+            float angle = Rand_ZeroOne() * 2.0f * kPi;
+            float off = Rand_ZeroOne() * 50.0f;
+            V3 target = { linkPos.x + sinf(angle) * off, linkPos.y + 10.0f, linkPos.z + cosf(angle) * off };
+            V3 d = target - self->pos;
+            self->vel = { d.x / t, (d.y + 0.5f * kArcGravity * t * t) / t, d.z / t };
+            self->dir = Normalize(self->vel);
+            self->homing = false;
+            break;
+        }
+
+        case MODE_HOVER: {
+            // Spread on a ring above her head; each one darts off a little after the previous
+            float angle = (float)index / count * 2.0f * kPi;
+            // Above her head on the floor; below her when she hangs on the ceiling
+            float up = (self->pos.y - linkPos.y > 250.0f) ? -kHoverHeight * 0.8f : kHoverHeight;
+            self->hoverPos = { self->pos.x + sinf(angle) * kHoverRadius, self->pos.y + up,
+                               self->pos.z + cosf(angle) * kHoverRadius };
+            self->dashAt = (s16)(kHoverRiseFrames + 10 + index * 6);
+            self->homing = false;
+            break;
+        }
+
+        default:
+            break;
+    }
+
     Collider_InitCylinder(play, &self->collider);
     Collider_SetCylinder(play, &self->collider, thisx, &sCylinderInit);
 }
@@ -136,16 +198,42 @@ void PearlArrow_Update(Actor* thisx, PlayState* play) {
     V3 toTarget = target - self->pos;
     float dist = sqrtf(Dot(toTarget, toTarget));
 
-    if (self->homing && self->timer > kLaunchFrames) {
-        self->dir = Normalize(self->dir + (Normalize(toTarget) - self->dir) * kTurnRate);
-        if (dist < kStopHomingDist) {
-            // Commit to the current heading: close enough to be dodged by side-stepping or rolling
-            self->homing = false;
-        }
-    }
+    switch (self->mode) {
+        case MODE_ARC:
+            self->vel.y -= kArcGravity;
+            self->pos = self->pos + self->vel;
+            self->dir = Normalize(self->vel);
+            break;
 
-    self->speed = (self->speed + self->accel < self->maxSpeed) ? self->speed + self->accel : self->maxSpeed;
-    self->pos = self->pos + self->dir * self->speed;
+        case MODE_HOVER:
+            if (self->timer < self->dashAt) {
+                // Rise to its spot above Gohma, then hang there with a slight bob, pointing at Link
+                V3 spot = self->hoverPos;
+                spot.y += sinf(self->timer * 0.5f) * 3.0f;
+                self->pos = self->pos + (spot - self->pos) * ((self->timer <= kHoverRiseFrames) ? 0.25f : 0.5f);
+                self->dir = Normalize(self->dir + (Normalize(toTarget) - self->dir) * 0.35f);
+            } else {
+                if (self->timer == self->dashAt) {
+                    self->dir = Normalize(toTarget);
+                    Vec3f pos = { self->pos.x, self->pos.y, self->pos.z };
+                    SoundSource_PlaySfxAtFixedWorldPos(play, &pos, 15, NA_SE_IT_MAGIC_ARROW_SHOT);
+                }
+                self->pos = self->pos + self->dir * kDashSpeed;
+            }
+            break;
+
+        default: // homing and straight
+            if (self->homing && self->timer > kLaunchFrames) {
+                self->dir = Normalize(self->dir + (Normalize(toTarget) - self->dir) * kTurnRate);
+                if (dist < kStopHomingDist) {
+                    // Commit to the current heading: close enough to be dodged by side-stepping or rolling
+                    self->homing = false;
+                }
+            }
+            self->speed = (self->speed + self->accel < self->maxSpeed) ? self->speed + self->accel : self->maxSpeed;
+            self->pos = self->pos + self->dir * self->speed;
+            break;
+    }
     self->roll += 0x1800;
     self->trail[2] = self->trail[1];
     self->trail[1] = self->trail[0];
@@ -166,7 +254,7 @@ void PearlArrow_Update(Actor* thisx, PlayState* play) {
         SpawnPearlSparkles(play, ToV3(hit), 3, 3.0f);
         return;
     }
-    if (self->timer > kFlyFrames) {
+    if (self->timer > kFlyFrames + ((self->mode == MODE_HOVER) ? self->dashAt : 0)) {
         Shatter(self, play);
         return;
     }
@@ -227,12 +315,21 @@ extern "C" void ZOP_SpawnPearlVolley(PlayState* play, void* shooterRef, int coun
     float drop = origin.y - waist->y;
     s16 pitchToPlayer = (s16)(atan2f(drop, sqrtf(dx * dx + dz * dz)) * (0x8000 / kPi));
 
-    // Fan out to the sides, then the arrows curve in on Link
+    // Each volley flies one way (see the top of the file)
+    int mode = (int)(Rand_ZeroOne() * (float)MODE_COUNT);
+    if (mode >= MODE_COUNT) {
+        mode = MODE_HOMING;
+    }
+    count = CLAMP(count, 1, 15);
+
     for (int i = 0; i < count; i++) {
         float spread = (count > 1) ? ((float)i / (count - 1) - 0.5f) : 0.0f;
-        s16 yaw = (s16)(yawToPlayer + spread * 0x6000 + Rand_CenteredFloat(0x600));
+        // Homing arrows fan out wide, a straight bundle stays tight
+        float fan = (mode == MODE_STRAIGHT) ? (float)0x1400 : (float)0x6000;
+        s16 yaw = (s16)(yawToPlayer + spread * fan + Rand_CenteredFloat(0x600));
         s16 pitch = (s16)(pitchToPlayer - 0x200 + Rand_CenteredFloat(0x500)); // a touch upward, never into the floor
-        Actor_Spawn(&play->actorCtx, play, sArrowActorId, origin.x, origin.y, origin.z, pitch, yaw, 0, i);
+        s16 params = (s16)(i | (count << 4) | (mode << 8));
+        Actor_Spawn(&play->actorCtx, play, sArrowActorId, origin.x, origin.y, origin.z, pitch, yaw, 0, params);
     }
     SoundSource_PlaySfxAtFixedWorldPos(play, &origin, 20, NA_SE_IT_MAGIC_ARROW_SHOT);
     SpawnPearlSparkles(play, ToV3(origin), 6, 5.0f);

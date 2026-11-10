@@ -42,6 +42,7 @@ struct GohmaLaser {
     V3 impact; // where it actually hits geometry
     s16 timer;
     s16 hitCooldown;
+    s16 fireFrames; // how long the beam fires (actor params, 0 = kFireFrames)
 };
 
 s16 sLaserActorId = -1;
@@ -89,6 +90,7 @@ void GohmaLaser_Init(Actor* thisx, PlayState* play) {
     thisx->room = -1;
     self->timer = 0;
     self->hitCooldown = 0;
+    self->fireFrames = (thisx->params > 0) ? thisx->params : kFireFrames;
     self->origin = ToV3(thisx->world.pos);
     UpdateOrigin(self);
 
@@ -116,13 +118,13 @@ void GohmaLaser_Update(Actor* thisx, PlayState* play) {
     V3 linkPos = ToV3(player->actor.world.pos);
 
     self->timer++;
-    if (self->timer > ZOP_GOHMA_LASER_FRAMES) {
+    if (self->timer > kAimFrames + self->fireFrames + kFadeFrames) {
         Actor_Kill(thisx);
         return;
     }
 
     UpdateOrigin(self);
-    bool firing = self->timer > kAimFrames && self->timer <= kAimFrames + kFireFrames;
+    bool firing = self->timer > kAimFrames && self->timer <= kAimFrames + self->fireFrames;
     self->target = MoveToward(self->target, linkPos, firing ? kTrackSpeed : kAimSpeed);
     UpdateImpact(self, play);
     thisx->world.pos = { self->impact.x, self->impact.y, self->impact.z };
@@ -208,10 +210,10 @@ extern "C" void GohmaLaser_Draw(Actor* thisx, PlayState* play) {
     float strength;
     if (aiming) {
         strength = (play->gameplayFrames & 1) ? 0.35f : 0.6f; // flickering aim line
-    } else if (t <= kAimFrames + kFireFrames) {
+    } else if (t <= kAimFrames + self->fireFrames) {
         strength = 0.9f + 0.1f * sinf(t * 1.7f);
     } else {
-        strength = 1.0f - (float)(t - kAimFrames - kFireFrames) / kFadeFrames;
+        strength = 1.0f - (float)(t - kAimFrames - self->fireFrames) / kFadeFrames;
     }
 
     OPEN_DISPS(play->state.gfxCtx);
@@ -251,10 +253,14 @@ extern "C" void GohmaLaser_Draw(Actor* thisx, PlayState* play) {
     CLOSE_DISPS(play->state.gfxCtx);
 }
 
-extern "C" void ZOP_SpawnGohmaLaser(PlayState* play, void* shooterRef) {
+extern "C" void ZOP_SpawnGohmaLaserTimed(PlayState* play, void* shooterRef, int fireFrames) {
     Actor* shooter = (Actor*)shooterRef;
     Actor_SpawnAsChild(&play->actorCtx, shooter, play, sLaserActorId, shooter->focus.pos.x, shooter->focus.pos.y,
-                       shooter->focus.pos.z, 0, 0, 0, 0);
+                       shooter->focus.pos.z, 0, 0, 0, (s16)fireFrames);
+}
+
+extern "C" void ZOP_SpawnGohmaLaser(PlayState* play, void* shooterRef) {
+    ZOP_SpawnGohmaLaserTimed(play, shooterRef, kFireFrames);
 }
 
 extern "C" void ZOP_StopGohmaLasers(PlayState* play) {

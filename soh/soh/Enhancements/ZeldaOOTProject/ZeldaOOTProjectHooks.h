@@ -38,6 +38,8 @@ int ZOP_GohmaSetRecolor(float amount);
 
 // Gohma phase 2: a tracking laser from the shooter's (an Actor*) eye, lasting ZOP_GOHMA_LASER_FRAMES (GohmaLaser.cpp)
 void ZOP_SpawnGohmaLaser(struct PlayState* play, void* shooter);
+// Same with a custom firing time in frames (the full laser lasts 22 + fireFrames + 8 frames)
+void ZOP_SpawnGohmaLaserTimed(struct PlayState* play, void* shooter, int fireFrames);
 void ZOP_StopGohmaLasers(struct PlayState* play);
 int ZOP_IsGohmaLaser(short actorId);
 int ZOP_GohmaLaserActive(struct PlayState* play);
@@ -83,7 +85,7 @@ int ZOP_TestGohmaEye(void);
 }
 #endif
 
-// Aim + fire + fade frames of a Gohma laser
+// Aim + fire + fade frames of a Gohma laser with the default firing time
 #define ZOP_GOHMA_LASER_FRAMES 94
 
 // Picks the aggressive value when the difficulty option is on, the vanilla one otherwise
