@@ -446,7 +446,7 @@ typedef enum {
 } ZopBurstState;
 
 #define ZOP_BURST_BALLS 5
-#define ZOP_BURST_CHARGE_FRAMES 30
+#define ZOP_BURST_CHARGE_FRAMES 22
 #define ZOP_BURST_MIN_HITS 3   // rally hits before he may catch the ball
 #define ZOP_BURST_CHANCE 0.4f  // chance to catch it then
 #define ZOP_BURST_COOLDOWN 600 // frames before the next one (30 s)
@@ -466,7 +466,7 @@ s32 BossGanondrof_ZopTryCatch(BossGanondrof* this, PlayState* play, s16 rallyHit
     this->actionFunc = BossGanondrof_ZopBurst;
     this->flyMode = GND_FLY_NEUTRAL;
     sZopBurstState = ZOP_BURST_CATCH;
-    sZopBurstTimer = 30; // fallback in case the ball never arrives
+    sZopBurstTimer = 20; // fallback in case the ball never arrives
     sZopBurstCooldown = ZOP_BURST_COOLDOWN;
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_LAUGH);
     return true;
@@ -520,7 +520,7 @@ static void BossGanondrof_ZopExplode(BossGanondrof* this, PlayState* play) {
                                          FHGFIRE_ENERGY_BALL);
 
         if (ball != NULL) {
-            ball->speedXZ = 11.0f;
+            ball->speedXZ = 14.0f;
         }
     }
     this->actor.child = &horse->actor;
@@ -579,9 +579,9 @@ static void BossGanondrof_ZopBurst(BossGanondrof* this, PlayState* play) {
                 pos.x = this->spearTip.x + Math_SinS(yaw) * Math_CosS(pitch) * r;
                 pos.y = this->spearTip.y + Math_SinS(pitch) * r;
                 pos.z = this->spearTip.z + Math_CosS(yaw) * Math_CosS(pitch) * r;
-                vel.x = (this->spearTip.x - pos.x) / 10.0f;
-                vel.y = (this->spearTip.y - pos.y) / 10.0f;
-                vel.z = (this->spearTip.z - pos.z) / 10.0f;
+                vel.x = (this->spearTip.x - pos.x) / 7.0f;
+                vel.y = (this->spearTip.y - pos.y) / 7.0f;
+                vel.z = (this->spearTip.z - pos.z) / 7.0f;
                 EffectSsFhgFlash_SpawnLightBall(play, &pos, &vel, &accel, (s16)(Rand_ZeroOne() * 60.0f) + 120,
                                                 (i == 0) ? FHGFLASH_LIGHTBALL_LIGHTBLUE : FHGFLASH_LIGHTBALL_GREEN);
             }
