@@ -92,6 +92,8 @@ void ZOP_GndRallyGlow(int hits);
 // ... and flickers up brightly for a moment (hits in the lightning part of a rally, Phantom Ganon hit); strength 1 =
 // normal flash
 void ZOP_GndRallyFlash(float strength);
+// ... and it starts / stops raining in the arena
+void ZOP_GndRallyRain(int on);
 
 // Testing aid: bosses skip straight to their phase 2 intro after the encounter cutscene (Difficulty.cpp)
 int ZOP_TestPhase2Intro(void);

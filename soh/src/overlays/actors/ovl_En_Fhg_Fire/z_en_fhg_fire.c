@@ -12,11 +12,11 @@
 #include "overlays/effects/ovl_Effect_Ss_Fhg_Flash/z_eff_ss_fhg_flash.h"
 #include "soh/Enhancements/ZeldaOOTProject/ZeldaOOTProjectHooks.h"
 
-// ZeldaOOTProject: Phantom Ganon's tennis gets long and fast. He can only miss from his 9th return on (25% each time,
-// for sure from the 14th), and every hit speeds the ball up more, with a much higher top speed.
-#define ZOP_GND_MIN_RETURNS 8
-#define ZOP_GND_MISS_CHANCE 0.25f
-#define ZOP_GND_SURE_MISS 14
+// ZeldaOOTProject: Phantom Ganon's tennis gets longer and faster. He can only miss from his 6th return on (30% each
+// time, for sure from the 9th), and every hit speeds the ball up.
+#define ZOP_GND_MIN_RETURNS 5
+#define ZOP_GND_MISS_CHANCE 0.3f
+#define ZOP_GND_SURE_MISS 9
 #define ZOP_GND_LINK_SPEEDUP 0.7f
 #define ZOP_GND_PHANTOM_SPEEDUP 1.0f
 #define ZOP_GND_MAX_SPEED 20.0f
@@ -53,12 +53,12 @@ static void EnFhgFire_ZopRallyHit(EnFhgFire* this, PlayState* play, f32 tx, f32 
     f32 dy = ty - this->actor.world.pos.y;
     f32 dz = tz - this->actor.world.pos.z;
 
-    this->ZOP_SOUND_FREQ = CLAMP_MAX(0.7f + hits * 0.09f, 2.0f);
+    this->ZOP_SOUND_FREQ = CLAMP_MAX(0.45f + hits * 0.09f, 1.9f);
     this->ZOP_SOUND_FRAMES = ZOP_SOUND_LENGTH;
 
-    // Late in a rally every hit gets more violent: from the 6th hit small sparks of the ball fly off into the dark,
-    // from the 9th lightning bolts lash out in all directions, with thunder; both grow with the rally
-    if (hits >= 6) {
+    // Late in a rally every hit gets more violent: from the 5th hit sparks of the ball fly off into the dark, from the
+    // 7th lightning bolts lash out in all directions, with thunder, and rain starts; both grow with the rally
+    if (hits >= 5) {
         s16 i;
         s16 count = CLAMP_MAX(hits - 3, 14) * 3;
         Vec3f accel = { 0.0f, -0.15f, 0.0f };
@@ -87,7 +87,7 @@ static void EnFhgFire_ZopRallyHit(EnFhgFire* this, PlayState* play, f32 tx, f32 
             EffectSsKiraKira_SpawnDispersed(play, &this->actor.world.pos, &vel, &glitterAccel, &prim, &env, 3000, 16);
         }
     }
-    if (hits >= 9) {
+    if (hits >= 7) {
         static Color_RGBA8 boltPrim = { 255, 255, 255, 255 };
         static Color_RGBA8 boltEnv = { 120, 230, 255, 255 };
         s16 i;
@@ -102,7 +102,8 @@ static void EnFhgFire_ZopRallyHit(EnFhgFire* this, PlayState* play, f32 tx, f32 
         }
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_THUNDER);
         ZOP_GndRallyFlash(1.0f);
-        if (hits >= 13) {
+        ZOP_GndRallyRain(true);
+        if (hits >= 11) {
             Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_SPARK);
         }
     }
@@ -829,6 +830,11 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                 bossGnd->flyMode = GND_FLY_NEUTRAL;
                 this->work[FHGFIRE_KILL_TIMER] = 30;
                 ZOP_GndRallyGlow(0);
+                // Only the end of a real rally stops the rain (not a free ball popping on Link's shield); it then
+                // dies down slowly
+                if (this->ZOP_RALLY_HITS > 0) {
+                    ZOP_GndRallyRain(false);
+                }
                 this->actor.draw = NULL;
                 if (killMode == BALL_FIZZLE) {
                     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_THUNDER_GND);

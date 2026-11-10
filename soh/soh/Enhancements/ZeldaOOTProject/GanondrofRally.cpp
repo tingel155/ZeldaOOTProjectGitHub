@@ -22,11 +22,14 @@ extern PlayState* gPlayState;
 
 namespace {
 
-constexpr int kFullGlowHits = 16; // hits until the room is fully lit
+constexpr int kFullGlowHits = 12; // hits until the room is fully lit
+constexpr u8 kRainDrops = 60;     // rain in the lightning part of a rally
 float sTarget = 0.0f;
 float sGlow = 0.0f;
 float sFlash = 0.0f; // bright flicker on top of the glow, decays fast
 bool sApplied = false;
+bool sRain = false;
+bool sRainApplied = false;
 
 // Same haze as Gohma's (BossGoma_SetHaze): brightened bluish fog, a touch of blue ambient light, fog pulled in
 void ApplyHaze(PlayState* play, float intensity) {
@@ -50,7 +53,19 @@ void Tick() {
     if (play->sceneNum != SCENE_FOREST_TEMPLE_BOSS) {
         sTarget = sGlow = 0.0f;
         sApplied = false;
+        sRain = sRainApplied = false;
         return;
+    }
+    // Rain: the environment eases the number of drops toward unk_EE[0]; start with a good shower right away
+    if (sRain) {
+        play->envCtx.unk_EE[0] = kRainDrops;
+        if (play->envCtx.unk_EE[1] < kRainDrops / 2) {
+            play->envCtx.unk_EE[1] = kRainDrops / 2;
+        }
+        sRainApplied = true;
+    } else if (sRainApplied) {
+        play->envCtx.unk_EE[0] = 0;
+        sRainApplied = false;
     }
     // Eases in quickly with every hit, fades out slowly once the rally is over
     float step = (sTarget > sGlow) ? 0.08f : 0.02f;
@@ -72,6 +87,10 @@ void Tick() {
 
 extern "C" void ZOP_GndRallyFlash(float strength) {
     sFlash = std::max(sFlash, strength);
+}
+
+extern "C" void ZOP_GndRallyRain(int on) {
+    sRain = on != 0;
 }
 
 extern "C" void ZOP_GndRallyGlow(int hits) {
