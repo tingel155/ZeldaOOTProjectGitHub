@@ -229,6 +229,14 @@ static void BossGoma_Phase2Slam(BossGoma* this, PlayState* play) {
                     Actor_SpawnFloorDustRing(play, &this->actor, &sZopWavePos, 200.0f, 20, 12.0f, 1000, 20, true);
                     // The ring itself throws Link back once it reaches him, unless he jumps over it
                     sZopWaveCanHit = true;
+                    // Reward window: her eye opens right with the impact (chime and flare) and she can be hit and
+                    // stunned from now on, so a player who jumps the wave gets a chance at her eye
+                    this->disableGameplayLogic = false;
+                    this->eyeClosedTimer = 0;
+                    this->patienceTimer = 200;
+                    sZopEyeClosedFrames = 0;
+                    Audio_PlayActorSound2(&this->actor, NA_SE_EV_DIAMOND_SWITCH);
+                    sZopEyeFlashTimer = BOSSGOMA_EYE_FLASH_FRAMES;
                 } else {
                     // Phase 2 intro: the same shockwave opens some distance before the cutscene
                     BossGoma_SpawnShockwave(this, this->actor.world.pos.y);
@@ -242,6 +250,9 @@ static void BossGoma_Phase2Slam(BossGoma* this, PlayState* play) {
             break;
 
         case 1:
+            if (sZopSlamIntoBarrage) {
+                this->eyeState = EYESTATE_IRIS_FOLLOW_NO_IFRAMES; // no blinking in the reward window
+            }
             if (this->framesUntilNextAction == 0) {
                 if (sZopSlamIntoBarrage) {
                     sZopSlamIntoBarrage = false;
@@ -723,8 +734,8 @@ static void BossGoma_SetupPhase2Barrage(BossGoma* this) {
     this->actor.speedXZ = 0.0f;
     sZopBarrageShotTimer = 12;
     sZopBarrageShots = 0;
-    // Reward for jumping the shockwave: her eye stays open for a moment (1.5 s), enough for a slingshot or a nut
-    sZopEyeCycleOpenStart = 30;
+    // The reward window opened at the slam's impact (1.5 s after it) lasts a few frames into the barrage
+    sZopEyeCycleOpenStart = 6;
     sZopBarrageSlamTimer = 0;
     sZopBarrageSlamAnim = false;
 }
@@ -2603,11 +2614,10 @@ void BossGoma_UpdateEye(BossGoma* this, PlayState* play) {
 
         if (inCycle && !sZopEyeWasInCycle) {
             if (sZopEyeCycleOpenStart > 0) {
-                // Reward window (after the barrage shockwave): open at once, with chime and flare
+                // Rest of the reward window opened at the barrage slam: the eye stays open a little longer
                 sZopEyeCycleClosed = false;
                 sZopEyeCycleTimer = sZopEyeCycleOpenStart;
                 sZopEyeCycleOpenStart = 0;
-                sZopEyeClosedFrames = BOSSGOMA_EYE_CHIME_MIN_CLOSED;
             } else if (sZopEyeCycleFromRoar) {
                 sZopEyeCycleClosed = false;
                 sZopEyeCycleTimer = 24;
