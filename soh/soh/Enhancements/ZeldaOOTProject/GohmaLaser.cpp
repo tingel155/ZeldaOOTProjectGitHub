@@ -106,6 +106,7 @@ void GohmaLaser_Init(Actor* thisx, PlayState* play) {
 
 void GohmaLaser_Destroy(Actor* thisx, PlayState* play) {
     GohmaLaser* self = (GohmaLaser*)thisx;
+    Audio_StopSfxByPos(&thisx->projectedPos);
     Collider_DestroyCylinder(play, &self->collider);
 }
 
@@ -259,8 +260,21 @@ extern "C" void ZOP_SpawnGohmaLaser(PlayState* play, void* shooterRef) {
 extern "C" void ZOP_StopGohmaLasers(PlayState* play) {
     for (Actor* actor = play->actorCtx.actorLists[ACTORCAT_ITEMACTION].head; actor != nullptr; actor = actor->next) {
         if (actor->id == sLaserActorId) {
+            // Stop its sounds right away: the actor itself may no longer update (e.g. once Link has died)
+            Audio_StopSfxByPos(&actor->projectedPos);
             Actor_Kill(actor);
         }
+    }
+}
+
+// Link died: the other actors freeze, so a laser would never reach its end and its beam sound would keep looping
+static void StopLasersOnDeath() {
+    if (gPlayState == nullptr) {
+        return;
+    }
+    Player* player = GET_PLAYER(gPlayState);
+    if (player != nullptr && ((player->stateFlags1 & PLAYER_STATE1_DEAD) || gSaveContext.health <= 0)) {
+        ZOP_StopGohmaLasers(gPlayState);
     }
 }
 
@@ -283,6 +297,7 @@ static void LaserTestTick() {
 
 static void RegisterGohmaLaser() {
     COND_HOOK(OnPlayerUpdate, CVarGetInteger("gZOP.TestEnv.LaserTest", 0), LaserTestTick);
+    COND_HOOK(OnPlayerUpdate, true, StopLasersOnDeath);
 
     if (sLaserActorId < 0) {
         ActorDBInit entry = {};

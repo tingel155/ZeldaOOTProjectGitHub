@@ -85,6 +85,12 @@ static u8 BossGoma_PickAttack(void) {
 }
 static s16 sZopFloorShootCooldown;
 
+// Phase 2 on the floor: the eye stays shut for stretches of time (no stun, no damage), then opens again with a chime
+static u8 sZopEyeCycleClosed;
+static s16 sZopEyeCycleTimer;
+static s16 sZopEyeClosedFrames; // how long the eye has been shut, so short blinks don't chime
+#define BOSSGOMA_EYE_CHIME_MIN_CLOSED 15
+
 static s32 BossGoma_InPhase2(BossGoma* this) {
     return ZOP_BossPhase2(&this->actor, 10);
 }
@@ -621,6 +627,9 @@ void BossGoma_Init(Actor* thisx, PlayState* play) {
     }
     this->actor.colChkInfo.mass = MASS_IMMOVABLE;
     sZopPhase2Announced = false;
+    sZopEyeCycleClosed = false;
+    sZopEyeCycleTimer = 60;
+    sZopEyeClosedFrames = 0;
     // Undo a recolor left over from an earlier fight; the texture cache is flushed on the next draw
     ZOP_GohmaSetRecolor(0.0f);
     sZopRecolorDirty = true;
@@ -2091,12 +2100,39 @@ void BossGoma_UpdateEye(BossGoma* this, PlayState* play) {
             this->eyeClosedTimer = 7;
         }
 
+        // Phase 2 on the floor: the eye alternates between open (about 3-5 s) and shut (about 2-3.5 s). Not while
+        // she lies stunned, so a successful stun can always be followed up.
+        if (BossGoma_InPhase2(this) && sZopPhase2Announced &&
+            (this->actionFunc == BossGoma_FloorMain || this->actionFunc == BossGoma_FloorIdle ||
+             this->actionFunc == BossGoma_FloorAttackPosture || this->actionFunc == BossGoma_FloorPrepareAttack ||
+             this->actionFunc == BossGoma_FloorAttack || this->actionFunc == BossGoma_FloorLand ||
+             this->actionFunc == BossGoma_Phase2FloorShoot)) {
+            if (sZopEyeCycleTimer > 0) {
+                sZopEyeCycleTimer--;
+            } else {
+                sZopEyeCycleClosed = !sZopEyeCycleClosed;
+                sZopEyeCycleTimer = sZopEyeCycleClosed ? Rand_S16Offset(40, 30) : Rand_S16Offset(60, 40);
+            }
+            if (sZopEyeCycleClosed) {
+                this->eyeClosedTimer = 7;
+            }
+        }
+
         if (this->eyeClosedTimer != 0) {
             this->eyeClosedTimer--;
+            if (sZopEyeClosedFrames < 0x7FFF) {
+                sZopEyeClosedFrames++;
+            }
             // close eye
             Math_ApproachS(&this->eyeLidBottomRotX, -0xA98, 1, 0x7D0);
             Math_ApproachS(&this->eyeLidTopRotX, 0x1600, 1, 0x7D0);
         } else {
+            // Phase 2: a crystal switch chime tells that the eye is open (and hittable) again
+            if (sZopPhase2Announced && sZopEyeClosedFrames >= BOSSGOMA_EYE_CHIME_MIN_CLOSED &&
+                this->actionFunc != BossGoma_Defeated) {
+                Audio_PlayActorSound2(&this->actor, NA_SE_EV_DIAMOND_SWITCH);
+            }
+            sZopEyeClosedFrames = 0;
             // open eye
             Math_ApproachS(&this->eyeLidBottomRotX, 0, 1, 0x7D0);
             Math_ApproachS(&this->eyeLidTopRotX, 0, 1, 0x7D0);
