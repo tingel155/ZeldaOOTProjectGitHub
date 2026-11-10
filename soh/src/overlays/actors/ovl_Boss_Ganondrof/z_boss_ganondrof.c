@@ -13,6 +13,7 @@
 #include "overlays/actors/ovl_Door_Warp1/z_door_warp1.h"
 #include "soh/OTRGlobals.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
+#include "soh/Enhancements/ZeldaOOTProject/ZeldaOOTProjectHooks.h"
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -1254,6 +1255,12 @@ void BossGanondrof_CollisionCheck(BossGanondrof* this, PlayState* play) {
 void BossGanondrof_Update(Actor* thisx, PlayState* play) {
     f32 cs;
     f32 sn;
+
+    // ZeldaOOTProject testing aid (gZOP.TestEnv.GanondrofPhase2): no intro, straight to floating (see EnfHG_Update)
+    if (ZOP_TestGanondrofPhase2() && (thisx->params == GND_REAL_BOSS) &&
+        (((BossGanondrof*)thisx)->actionFunc == BossGanondrof_Intro)) {
+        BossGanondrof_SetupPaintings((BossGanondrof*)thisx);
+    }
     f32 legRotTargetY;
     f32 legRotTargetZ;
     f32 legSplitTarget;

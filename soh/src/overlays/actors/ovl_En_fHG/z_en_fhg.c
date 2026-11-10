@@ -11,6 +11,7 @@
 #include "overlays/actors/ovl_Boss_Ganondrof/z_boss_ganondrof.h"
 #include "overlays/actors/ovl_En_Fhg_Fire/z_en_fhg_fire.h"
 #include "soh/frame_interpolation.h"
+#include "soh/Enhancements/ZeldaOOTProject/ZeldaOOTProjectHooks.h"
 
 #define FLAGS ACTOR_FLAG_UPDATE_CULLING_DISABLED
 
@@ -687,6 +688,19 @@ void EnfHG_Update(Actor* thisx, PlayState* play) {
 
     if (this->killActor) {
         Actor_Kill(&this->actor);
+        return;
+    }
+    // ZeldaOOTProject testing aid (gZOP.TestEnv.GanondrofPhase2): skip the intro and the painting phase, Phantom Ganon
+    // starts floating at phase 2 health
+    if (ZOP_TestGanondrofPhase2() && (this->actor.params == GND_REAL_BOSS) && (this->actionFunc != EnfHG_Done) &&
+        (this->actor.parent != NULL)) {
+        BossGanondrof* bossGnd = (BossGanondrof*)this->actor.parent;
+
+        bossGnd->actor.colChkInfo.health = 24;
+        bossGnd->flyMode = GND_FLY_NEUTRAL;
+        this->actionFunc = EnfHG_Done;
+        this->actor.draw = NULL;
+        Audio_QueueSeqCmd(SEQ_PLAYER_BGM_MAIN << 24 | NA_BGM_BOSS);
         return;
     }
     this->gallopTimer++;

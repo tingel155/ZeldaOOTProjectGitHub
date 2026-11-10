@@ -10,6 +10,16 @@
 #include "overlays/actors/ovl_Boss_Ganondrof/z_boss_ganondrof.h"
 #include "overlays/actors/ovl_En_fHG/z_en_fhg.h"
 #include "overlays/effects/ovl_Effect_Ss_Fhg_Flash/z_eff_ss_fhg_flash.h"
+#include "soh/Enhancements/ZeldaOOTProject/ZeldaOOTProjectHooks.h"
+
+// ZeldaOOTProject: Phantom Ganon's tennis gets long and fast. He can only miss from his 9th return on (25% each time,
+// for sure from the 14th), and every hit speeds the ball up more, with a much higher top speed.
+#define ZOP_GND_MIN_RETURNS 8
+#define ZOP_GND_MISS_CHANCE 0.25f
+#define ZOP_GND_SURE_MISS 14
+#define ZOP_GND_LINK_SPEEDUP 1.5f
+#define ZOP_GND_PHANTOM_SPEEDUP 2.5f
+#define ZOP_GND_MAX_SPEED 28.0f
 
 #define FLAGS (ACTOR_FLAG_UPDATE_CULLING_DISABLED | ACTOR_FLAG_DRAW_CULLING_DISABLED)
 
@@ -506,15 +516,27 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                             angleModX = 0;
                             angleModY = 0;
                             this->work[FHGFIRE_RETURN_COUNT]++;
-                            if ((this->work[FHGFIRE_RETURN_COUNT] > 3) && (Rand_ZeroOne() < 0.5f)) {
-                                this->work[FHGFIRE_RETURN_COUNT] = 100;
-                            }
-
-                            if (!canBottleReflect2 && (player->meleeWeaponAnimation >= 24)) {
-                                this->actor.speedXZ = 20.0f;
-                                this->work[FHGFIRE_RETURN_COUNT] = 4;
+                            if (ZOP_DifficultyEnabled()) {
+                                if ((this->work[FHGFIRE_RETURN_COUNT] >= ZOP_GND_SURE_MISS) ||
+                                    ((this->work[FHGFIRE_RETURN_COUNT] > ZOP_GND_MIN_RETURNS) &&
+                                     (Rand_ZeroOne() < ZOP_GND_MISS_CHANCE))) {
+                                    this->work[FHGFIRE_RETURN_COUNT] = 100;
+                                }
+                                // A spin attack hits it back harder, but no longer shortens the rally
+                                this->actor.speedXZ += (!canBottleReflect2 && (player->meleeWeaponAnimation >= 24))
+                                                           ? ZOP_GND_LINK_SPEEDUP + 1.5f
+                                                           : ZOP_GND_LINK_SPEEDUP;
                             } else {
-                                this->actor.speedXZ += 1.0f;
+                                if ((this->work[FHGFIRE_RETURN_COUNT] > 3) && (Rand_ZeroOne() < 0.5f)) {
+                                    this->work[FHGFIRE_RETURN_COUNT] = 100;
+                                }
+
+                                if (!canBottleReflect2 && (player->meleeWeaponAnimation >= 24)) {
+                                    this->actor.speedXZ = 20.0f;
+                                    this->work[FHGFIRE_RETURN_COUNT] = 4;
+                                } else {
+                                    this->actor.speedXZ += 1.0f;
+                                }
                             }
                         }
                         this->actor.world.rot.y = (s16)(Math_FAtan2F(dxPG, dzPG) * (0x8000 / M_PI)) + angleModY;
@@ -583,7 +605,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                     this->actor.world.rot.x = Math_FAtan2F(dyL, dxzL) * (0x8000 / M_PI);
                     this->work[FHGFIRE_FIRE_MODE] = FHGFIRE_LIGHT_GREEN;
                     Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_REFLECT_MG);
-                    this->actor.speedXZ += 2.0f;
+                    this->actor.speedXZ += ZOP_DifficultyEnabled() ? ZOP_GND_PHANTOM_SPEEDUP : 2.0f;
                 }
                 break;
         }
@@ -630,8 +652,8 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
         }
         Lights_PointNoGlowSetInfo(&this->lightInfo, (s16)this->actor.world.pos.x, (s16)this->actor.world.pos.y,
                                   (s16)this->actor.world.pos.z, 255, 255, 255, 200);
-        if (this->actor.speedXZ > 20.0f) {
-            this->actor.speedXZ = 20.0f;
+        if (this->actor.speedXZ > (ZOP_DifficultyEnabled() ? ZOP_GND_MAX_SPEED : 20.0f)) {
+            this->actor.speedXZ = ZOP_DifficultyEnabled() ? ZOP_GND_MAX_SPEED : 20.0f;
         }
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_FIRE - SFX_FLAG);
         // "Why ah ah ah ah"

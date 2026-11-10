@@ -89,6 +89,8 @@ int ZOP_Phase2IntroStyle(void);
 int ZOP_TestPhase2Intro(void);
 // Testing aid: Gohma stands in front of Link and cycles through eyelid poses
 int ZOP_TestGohmaEye(void);
+// Testing aid: Phantom Ganon skips his intro and painting phase and starts floating
+int ZOP_TestGanondrofPhase2(void);
 
 #ifdef __cplusplus
 }

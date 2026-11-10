@@ -91,6 +91,11 @@ extern "C" int ZOP_TestGohmaEye(void) {
     return CVarGetInteger("gZOP.TestEnv.GohmaEyeTest", 0);
 }
 
+// Testing aid: Phantom Ganon skips his intro and painting phase and starts floating (gZOP.TestEnv.GanondrofPhase2)
+extern "C" int ZOP_TestGanondrofPhase2(void) {
+    return CVarGetInteger("gZOP.TestEnv.GanondrofPhase2", 0);
+}
+
 extern "C" float ZOP_EnemyStunMult(void) {
     return CVAR_DIFFICULTY_VALUE ? CVarGetFloat(CVAR_ZOP_DIFFICULTY("StunMult"), 1.5f) : 1.0f;
 }
