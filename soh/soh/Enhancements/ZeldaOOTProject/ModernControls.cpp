@@ -238,15 +238,18 @@ void ZOP_RegisterModernControls() {
     // Jump, then roll: A pressed in the air queues a roll that starts the moment Link lands
     COND_HOOK(OnPlayerUpdate, ZOP_FreeJump(), []() {
         static bool sRollQueued = false;
+        static bool sWasAirborne = false;
         Player* player = GET_PLAYER(gPlayState);
         if (player == nullptr) {
             return;
         }
         bool airborne = !(player->actor.bgCheckFlags & BGCHECKFLAG_GROUND);
         bool jumping = (player->stateFlags1 & PLAYER_STATE1_JUMPING) != 0;
-        if (airborne && jumping && CHECK_BTN_ALL(gPlayState->state.input[0].press.button, BTN_A)) {
+        // Only a press while already in the air counts (the press that started the jump comes on the takeoff frame)
+        if (airborne && sWasAirborne && jumping && CHECK_BTN_ALL(gPlayState->state.input[0].press.button, BTN_A)) {
             sRollQueued = true;
         }
+        sWasAirborne = airborne;
         if (sRollQueued && !airborne) {
             sRollQueued = false;
             if (!(player->stateFlags1 & (PLAYER_STATE1_IN_WATER | PLAYER_STATE1_DAMAGED | PLAYER_STATE1_DEAD |

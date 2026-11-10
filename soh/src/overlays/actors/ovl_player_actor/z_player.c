@@ -6336,7 +6336,7 @@ s32 Player_ZopTryFreeJump(Player* this, PlayState* play) {
     }
 
     func_80838940(this, &gPlayerAnim_link_normal_jump, ZOP_FreeJumpHeight(), play, NA_SE_VO_LI_AUTO_JUMP);
-    this->yaw = this->actor.shape.rot.y = this->actor.world.rot.y = sControlStickAngle;
+    this->yaw = this->actor.shape.rot.y = this->actor.world.rot.y = sControlStickWorldYaw;
     this->linearVelocity = CLAMP_MIN(this->linearVelocity, ZOP_FreeJumpSpeed());
     return true;
 }
@@ -6346,7 +6346,7 @@ s32 Player_ZopTryFreeJump(Player* this, PlayState* play) {
  */
 void Player_ZopLandingRoll(Player* this, PlayState* play) {
     if (sControlStickMagnitude > 12.0f) {
-        this->yaw = this->actor.shape.rot.y = this->actor.world.rot.y = sControlStickAngle;
+        this->yaw = this->actor.shape.rot.y = this->actor.world.rot.y = sControlStickWorldYaw;
     }
     Player_SetupRoll(this, play);
 }
@@ -6379,7 +6379,7 @@ void func_8083BCD0(Player* this, PlayState* play, s32 controlStickDirection) {
     // ZeldaOOTProject: the animation follows the main direction, but the hop goes exactly where the stick points
     // (back and a bit right: a backflip drifting right) (ModernControls.cpp)
     if (ZOP_AnalogDodge() && (sControlStickMagnitude > 12.0f)) {
-        this->yaw = sControlStickAngle;
+        this->yaw = sControlStickWorldYaw;
     }
 
     this->stateFlags2 |= PLAYER_STATE2_HOPPING;
