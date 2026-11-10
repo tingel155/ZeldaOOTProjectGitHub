@@ -60,8 +60,11 @@ void BossGoma_SpawnChildGohma(BossGoma* this, PlayState* play, s16 i);
 // ZeldaOOTProject: second phase once Gohma is down to half her health (gZOP.Difficulty.Phase2At). She retreats to the ceiling more often and,
 // instead of laying eggs, broods there and fires volleys of homing pearl arrows.
 #define BOSSGOMA_PHASE2_VOLLEY_FRAMES 110
-#define BOSSGOMA_PHASE2_ROAR_FRAMES 110
-#define BOSSGOMA_PHASE2_LINK_SHOT_FRAME 70 // roar cutscene: orbit around Gohma until here, then a shot on Link
+#define BOSSGOMA_PHASE2_ROAR_FRAMES 140
+// Roar cutscene: orbit around Gohma, then a close-up of her eye opening, then a shot on Link
+#define BOSSGOMA_PHASE2_EYE_SHOT_FRAME 70
+#define BOSSGOMA_PHASE2_EYE_OPEN_FRAME 84
+#define BOSSGOMA_PHASE2_LINK_SHOT_FRAME 102
 static u8 sZopPhase2Announced;
 static u8 sZopRecolorDirty;
 static s16 sZopRoarCamAngle;
@@ -233,7 +236,36 @@ static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
         BossGoma_SetHaze(play, haze);
     }
 
-    if (elapsed < BOSSGOMA_PHASE2_LINK_SHOT_FRAME) {
+    if (elapsed >= BOSSGOMA_PHASE2_EYE_SHOT_FRAME && elapsed < BOSSGOMA_PHASE2_LINK_SHOT_FRAME) {
+        // Shot 2: close-up of her eye. It is shut, then opens slowly with the crystal chime and a lens flare
+        s16 yaw = this->actor.shape.rot.y;
+
+        if (elapsed == BOSSGOMA_PHASE2_EYE_SHOT_FRAME) {
+            this->eyeLidBottomRotX = -0xA98;
+            this->eyeLidTopRotX = 0x1600;
+            Play_CameraSetFov(play, this->subCameraId, 38.0f);
+        }
+        if (elapsed >= BOSSGOMA_PHASE2_EYE_OPEN_FRAME) {
+            if (elapsed == BOSSGOMA_PHASE2_EYE_OPEN_FRAME) {
+                Audio_PlayActorSound2(&this->actor, NA_SE_EV_DIAMOND_SWITCH);
+                sZopEyeFlashTimer = BOSSGOMA_EYE_FLASH_FRAMES;
+            }
+            Math_ApproachS(&this->eyeLidBottomRotX, 0, 1, 0x380);
+            Math_ApproachS(&this->eyeLidTopRotX, 0, 1, 0x600);
+        }
+
+        // In front of the eye, a little below it, slowly pushing in
+        {
+            f32 push = (f32)(elapsed - BOSSGOMA_PHASE2_EYE_SHOT_FRAME) /
+                       (BOSSGOMA_PHASE2_LINK_SHOT_FRAME - BOSSGOMA_PHASE2_EYE_SHOT_FRAME);
+            f32 dist = 150.0f - 30.0f * push;
+
+            this->subCameraEye.x = this->actor.focus.pos.x + Math_SinS(yaw) * dist;
+            this->subCameraEye.y = this->actor.focus.pos.y - 12.0f;
+            this->subCameraEye.z = this->actor.focus.pos.z + Math_CosS(yaw) * dist;
+            this->subCameraAt = this->actor.focus.pos;
+        }
+    } else if (elapsed < BOSSGOMA_PHASE2_LINK_SHOT_FRAME) {
         // Shot 1: the camera circles Gohma, slightly below her eye line
         sZopRoarCamAngle += 0x2C0;
         Math_ApproachF(&this->subCameraEye.x, this->actor.world.pos.x + Math_SinS(sZopRoarCamAngle) * 260.0f, 0.3f,
@@ -245,7 +277,7 @@ static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
         Math_ApproachF(&this->subCameraAt.y, this->actor.focus.pos.y, 0.3f, 40.0f);
         Math_ApproachF(&this->subCameraAt.z, this->actor.focus.pos.z, 0.3f, 40.0f);
     } else {
-        // Shot 2: hard cut to Link's face, he flinches in shock. Telephoto: far away with a narrow field of view
+        // Shot 3: hard cut to Link's face, he flinches in shock. Telephoto: far away with a narrow field of view
         Vec3f* head = &player->bodyPartsPos[PLAYER_BODYPART_HEAD];
         s16 linkYaw = Math_Vec3f_Yaw(&player->actor.world.pos, &this->actor.world.pos);
 
@@ -2105,7 +2137,7 @@ void BossGoma_UpdateEye(BossGoma* this, PlayState* play) {
             this->eyeClosedTimer = 7;
         }
 
-        // Phase 2 on the floor: the eye alternates between open (about 3-5 s) and shut (about 2-3.5 s). Not while
+        // Phase 2 on the floor: the eye alternates between briefly open and shut (about 2.5-4 s). Not while
         // she lies stunned, so a successful stun can always be followed up.
         if (BossGoma_InPhase2(this) && sZopPhase2Announced &&
             (this->actionFunc == BossGoma_FloorMain || this->actionFunc == BossGoma_FloorIdle ||
@@ -2116,7 +2148,8 @@ void BossGoma_UpdateEye(BossGoma* this, PlayState* play) {
                 sZopEyeCycleTimer--;
             } else {
                 sZopEyeCycleClosed = !sZopEyeCycleClosed;
-                sZopEyeCycleTimer = sZopEyeCycleClosed ? Rand_S16Offset(40, 30) : Rand_S16Offset(60, 40);
+                // Open only briefly (about 1.2-1.8 s): a short window for the slingshot or a Deku Nut
+                sZopEyeCycleTimer = sZopEyeCycleClosed ? Rand_S16Offset(50, 30) : Rand_S16Offset(24, 12);
             }
             if (sZopEyeCycleClosed) {
                 this->eyeClosedTimer = 7;
@@ -2127,9 +2160,9 @@ void BossGoma_UpdateEye(BossGoma* this, PlayState* play) {
         // either). The open/shut cycle starts over with an open stretch.
         if (sZopPhase2Announced && ZOP_GohmaLaserActive(play)) {
             this->eyeClosedTimer = 0;
-            if (sZopEyeCycleClosed || sZopEyeCycleTimer < 40) {
+            if (sZopEyeCycleClosed || sZopEyeCycleTimer < 24) {
                 sZopEyeCycleClosed = false;
-                sZopEyeCycleTimer = 40;
+                sZopEyeCycleTimer = 24;
             }
         }
 
@@ -2612,7 +2645,7 @@ void BossGoma_Draw(Actor* thisx, PlayState* play) {
             recolor = 1.0f;
             if (this->actionFunc == BossGoma_Phase2Roar) {
                 recolor = (f32)(BOSSGOMA_PHASE2_ROAR_FRAMES - this->framesUntilNextAction) /
-                          BOSSGOMA_PHASE2_LINK_SHOT_FRAME;
+                          BOSSGOMA_PHASE2_EYE_SHOT_FRAME;
                 recolor = CLAMP_MAX(recolor, 1.0f);
             }
         }
