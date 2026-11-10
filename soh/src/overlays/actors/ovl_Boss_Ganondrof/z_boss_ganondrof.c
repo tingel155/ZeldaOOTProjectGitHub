@@ -211,6 +211,8 @@ void BossGanondrof_SetColliderPos(Vec3f* pos, ColliderCylinder* collider) {
     collider->dim.pos.z = pos->z;
 }
 
+static s16 sZopBurstCooldown; // catch-and-burst attack, see below
+
 void BossGanondrof_Init(Actor* thisx, PlayState* play) {
     s32 pad;
     BossGanondrof* this = (BossGanondrof*)thisx;
@@ -218,6 +220,7 @@ void BossGanondrof_Init(Actor* thisx, PlayState* play) {
     Actor_ProcessInitChain(&this->actor, sInitChain);
     ActorShape_Init(&this->actor.shape, 0.0f, NULL, 0.0f);
     Actor_SetScale(&this->actor, 0.01f);
+    sZopBurstCooldown = 200;
     SkelAnime_Init(play, &this->skelAnime, &gPhantomGanonSkel, &gPhantomGanonRideAnim, NULL, NULL, 0);
     if (this->actor.params < GND_FAKE_BOSS) {
         this->actor.params = GND_REAL_BOSS;
@@ -433,6 +436,172 @@ void BossGanondrof_Paintings(BossGanondrof* this, PlayState* play) {
         this->actor.scale.z = horse->actor.scale.z / 1.15f;
         osSyncPrintf("RUN 4\n");
     }
+}
+
+// ---------- ZeldaOOTProject: catch-and-burst attack
+typedef enum {
+    ZOP_BURST_CATCH,  // the ball flies into his spear
+    ZOP_BURST_CHARGE, // he takes it in, light streams into him
+    ZOP_BURST_THROW   // magic explosion, the balls fly at Link
+} ZopBurstState;
+
+#define ZOP_BURST_BALLS 5
+#define ZOP_BURST_CHARGE_FRAMES 30
+#define ZOP_BURST_MIN_HITS 3   // rally hits before he may catch the ball
+#define ZOP_BURST_CHANCE 0.4f  // chance to catch it then
+#define ZOP_BURST_COOLDOWN 600 // frames before the next one (30 s)
+
+static s16 sZopBurstState;
+static s16 sZopBurstTimer;
+
+static void BossGanondrof_ZopBurst(BossGanondrof* this, PlayState* play);
+
+s32 BossGanondrof_ZopTryCatch(BossGanondrof* this, PlayState* play, s16 rallyHits) {
+    if (!ZOP_DifficultyEnabled() || (sZopBurstCooldown > 0) || (rallyHits < ZOP_BURST_MIN_HITS) ||
+        (this->deathState != NOT_DEAD) || (this->actionFunc == BossGanondrof_Stunned) ||
+        (Rand_ZeroOne() > ZOP_BURST_CHANCE)) {
+        return false;
+    }
+    Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonBlockAnim, -3.0f);
+    this->actionFunc = BossGanondrof_ZopBurst;
+    this->flyMode = GND_FLY_NEUTRAL;
+    sZopBurstState = ZOP_BURST_CATCH;
+    sZopBurstTimer = 60; // fallback in case the ball never arrives
+    sZopBurstCooldown = ZOP_BURST_COOLDOWN;
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_LAUGH);
+    return true;
+}
+
+static void BossGanondrof_ZopStartCharge(BossGanondrof* this, PlayState* play) {
+    EnfHG* horse = (EnfHG*)this->actor.child;
+
+    sZopBurstState = ZOP_BURST_CHARGE;
+    sZopBurstTimer = ZOP_BURST_CHARGE_FRAMES;
+    Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonChargeWindupAnim, -3.0f);
+    this->shockTimer = 12;
+    // the glowing ball of light on his spear while he holds it
+    Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_FHG_FIRE, this->spearTip.x, this->spearTip.y,
+                       this->spearTip.z, ZOP_BURST_CHARGE_FRAMES, FHGFIRE_LIGHT_GREEN, 0, FHGFIRE_SPEAR_LIGHT);
+    this->actor.child = &horse->actor;
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_MASIC1);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_STICK);
+}
+
+// Called by the caught ball when it has reached his spear
+void BossGanondrof_ZopAbsorbed(BossGanondrof* this, PlayState* play) {
+    if ((this->actionFunc == BossGanondrof_ZopBurst) && (sZopBurstState == ZOP_BURST_CATCH)) {
+        BossGanondrof_ZopStartCharge(this, play);
+    }
+}
+
+static void BossGanondrof_ZopExplode(BossGanondrof* this, PlayState* play) {
+    static Color_RGBA8 boltPrim = { 255, 255, 255, 255 };
+    static Color_RGBA8 boltEnv = { 120, 255, 120, 255 };
+    Player* player = GET_PLAYER(play);
+    EnfHG* horse = (EnfHG*)this->actor.child;
+    s16 yaw = Math_Vec3f_Yaw(&this->spearTip, &player->actor.world.pos);
+    s16 perp = yaw + 0x4000;
+    Vec3f accel = { 0.0f, -0.1f, 0.0f };
+    s16 i;
+
+    sZopBurstState = ZOP_BURST_THROW;
+    this->fwork[GND_END_FRAME] = Animation_GetLastFrame(&gPhantomGanonThrowEndAnim);
+    Animation_MorphToPlayOnce(&this->skelAnime, &gPhantomGanonThrowEndAnim, 0.0f);
+    this->shockTimer = 10;
+
+    // The balls, in a ring around his spear, all aimed at Link (they close in on him)
+    for (i = 0; i < ZOP_BURST_BALLS; i++) {
+        s16 ang = i * (0x10000 / ZOP_BURST_BALLS) + 0x4000;
+        f32 side = Math_CosS(ang) * 70.0f;
+        f32 up = Math_SinS(ang) * 55.0f;
+        Actor* ball = Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_FHG_FIRE,
+                                         this->spearTip.x + Math_SinS(perp) * side, this->spearTip.y + up,
+                                         this->spearTip.z + Math_CosS(perp) * side, 0, 0, GND_ZOP_BURST_BALL,
+                                         FHGFIRE_ENERGY_BALL);
+
+        if (ball != NULL) {
+            ball->speedXZ = 7.0f;
+        }
+    }
+    this->actor.child = &horse->actor;
+
+    // Magic explosion: bright flash, bolts in all directions, a cloud of light, thunder
+    for (i = 0; i < 40; i++) {
+        Vec3f vel = { Rand_CenteredFloat(24.0f), Rand_CenteredFloat(24.0f), Rand_CenteredFloat(24.0f) };
+
+        EffectSsFhgFlash_SpawnLightBall(play, &this->spearTip, &vel, &accel, (s16)(Rand_ZeroOne() * 120.0f) + 160,
+                                        FHGFLASH_LIGHTBALL_GREEN);
+    }
+    for (i = 0; i < 8; i++) {
+        Vec3f pos = this->spearTip;
+
+        EffectSsLightning_Spawn(play, &pos, &boltPrim, &boltEnv, (s16)(220 + Rand_ZeroOne() * 120.0f),
+                                (s16)(i * 0x2000 + Rand_CenteredFloat(0x1000)), 7, 3);
+    }
+    ZOP_GndRallyFlash(2.2f);
+    Actor_RequestQuakeAndRumble(&this->actor, play, 4, 10);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_THUNDER);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_HIT_THUNDER);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_VOICE);
+}
+
+static void BossGanondrof_ZopBurst(BossGanondrof* this, PlayState* play) {
+    SkelAnime_Update(&this->skelAnime);
+    this->actor.world.pos.x += this->actor.velocity.x;
+    this->actor.world.pos.z += this->actor.velocity.z;
+    Math_ApproachZeroF(&this->actor.velocity.x, 1.0f, 0.5f);
+    Math_ApproachZeroF(&this->actor.velocity.z, 1.0f, 0.5f);
+    this->actor.world.pos.y += 2.0f * Math_SinS(this->work[GND_VARIANCE_TIMER] * 1500);
+    Math_ApproachS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 5, 0x7D0);
+    if (sZopBurstTimer > 0) {
+        sZopBurstTimer--;
+    }
+
+    switch (sZopBurstState) {
+        case ZOP_BURST_CATCH:
+            if (sZopBurstTimer == 0) {
+                BossGanondrof_ZopStartCharge(this, play);
+            }
+            break;
+        case ZOP_BURST_CHARGE: {
+            // Light streams into him from all around, the room flickers brighter and brighter
+            Vec3f accel = { 0.0f, 0.0f, 0.0f };
+            f32 progress = 1.0f - (f32)sZopBurstTimer / ZOP_BURST_CHARGE_FRAMES;
+            s16 i;
+
+            for (i = 0; i < 3; i++) {
+                Vec3f pos;
+                Vec3f vel;
+                s16 yaw = (s16)(Rand_ZeroOne() * 0xFFFF);
+                s16 pitch = (s16)Rand_CenteredFloat(0x8000);
+                f32 r = 90.0f + Rand_ZeroOne() * 40.0f;
+
+                pos.x = this->spearTip.x + Math_SinS(yaw) * Math_CosS(pitch) * r;
+                pos.y = this->spearTip.y + Math_SinS(pitch) * r;
+                pos.z = this->spearTip.z + Math_CosS(yaw) * Math_CosS(pitch) * r;
+                vel.x = (this->spearTip.x - pos.x) / 10.0f;
+                vel.y = (this->spearTip.y - pos.y) / 10.0f;
+                vel.z = (this->spearTip.z - pos.z) / 10.0f;
+                EffectSsFhgFlash_SpawnLightBall(play, &pos, &vel, &accel, (s16)(Rand_ZeroOne() * 60.0f) + 120,
+                                                (i == 0) ? FHGFLASH_LIGHTBALL_LIGHTBLUE : FHGFLASH_LIGHTBALL_GREEN);
+            }
+            if ((sZopBurstTimer & 3) == 0) {
+                ZOP_GndRallyFlash(0.2f + 0.6f * progress);
+            }
+            if (sZopBurstTimer == 0) {
+                BossGanondrof_ZopExplode(this, play);
+            }
+            break;
+        }
+        case ZOP_BURST_THROW:
+            if (Animation_OnFrame(&this->skelAnime, this->fwork[GND_END_FRAME])) {
+                BossGanondrof_SetupNeutral(this, -6.0f);
+                this->flyMode = GND_FLY_NEUTRAL;
+                this->timers[0] = 100; // let the balls fly first
+            }
+            break;
+    }
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_FLOAT - SFX_FLAG);
 }
 
 void BossGanondrof_SetupNeutral(BossGanondrof* this, f32 arg1) {
@@ -1272,6 +1441,9 @@ void BossGanondrof_Update(Actor* thisx, PlayState* play) {
     BossGanondrof* this = (BossGanondrof*)thisx;
     EnfHG* horse;
 
+    if (sZopBurstCooldown > 0) {
+        sZopBurstCooldown--;
+    }
     osSyncPrintf("MOVE START %d\n", this->actor.params);
     this->actor.flags &= ~ACTOR_FLAG_HOOKSHOT_PULLS_PLAYER;
     this->colliderBody.base.colType = COLTYPE_HIT3;

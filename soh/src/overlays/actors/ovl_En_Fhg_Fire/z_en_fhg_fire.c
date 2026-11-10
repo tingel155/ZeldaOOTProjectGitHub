@@ -41,6 +41,10 @@
 #define ZOP_SOUND_FRAMES fwork[FHGFIRE_WARP_TEX_SPEED]
 #define ZOP_SOUND_FREQ fwork[FHGFIRE_WARP_ALPHA]
 #define ZOP_SOUND_LENGTH 16
+// Catch-and-burst attack (see BossGanondrof_ZopTryCatch): the caught ball flies into his spear, the burst balls
+#define ZOP_FHGFIRE_ABSORB 3
+#define ZOP_ABSORB_START_DIST fwork[FHGFIRE_BURST_SCALE]
+#define ZOP_IS_BURST_BALL (this->actor.world.rot.z == GND_ZOP_BURST_BALL)
 #define ZOP_GND_RALLY_SOUND 0 // rising charge sound on every hit (off for now)
 
 /**
@@ -582,6 +586,72 @@ void EnFhgFire_SpearLight(EnFhgFire* this, PlayState* play) {
     }
 }
 
+/**
+ * ZeldaOOTProject: a ball of Phantom Ganon's burst. It closes in on Link and only a spin attack or Nayru's Love sends it
+ * back, and then it hits Phantom Ganon for sure. Shield and normal slashes don't help. Returns the kill mode.
+ */
+static u8 EnFhgFire_ZopBurstBall(EnFhgFire* this, PlayState* play, BossGanondrof* bossGnd, Player* player, f32 dxL,
+                                 f32 dyL, f32 dzL) {
+    f32 dist = sqrtf(SQ(dxL) + SQ(dyL) + SQ(dzL));
+    s32 reflect = false;
+    s32 byNayru = false;
+
+    if (this->collider.base.acFlags & AC_HIT) {
+        ColliderInfo* hurtbox = this->collider.info.acHitInfo;
+
+        this->collider.base.acFlags &= ~AC_HIT;
+        if ((hurtbox != NULL) && !(hurtbox->toucher.dmgFlags & 0x00100000) &&
+            ((hurtbox->toucher.dmgFlags & (DMG_SPIN_KOKIRI | DMG_SPIN_GIANT | DMG_SPIN_MASTER)) ||
+             (player->meleeWeaponAnimation >= PLAYER_MWA_SPIN_ATTACK_1H))) {
+            reflect = true;
+        }
+    }
+    if (!reflect && (gSaveContext.nayrusLoveTimer != 0) && (dist <= 70.0f)) {
+        reflect = byNayru = true;
+    }
+
+    if (reflect) {
+        f32 dxPG = bossGnd->targetPos.x - this->actor.world.pos.x;
+        f32 dyPG = bossGnd->targetPos.y - this->actor.world.pos.y;
+        f32 dzPG = bossGnd->targetPos.z - this->actor.world.pos.z;
+        Vec3f accel = { 0.0f, -0.5f, 0.0f };
+        s16 i;
+
+        for (i = 0; i < 30; i++) {
+            Vec3f vel = { Rand_CenteredFloat(20.0f), Rand_CenteredFloat(20.0f), Rand_CenteredFloat(20.0f) };
+
+            EffectSsFhgFlash_SpawnLightBall(play, &this->actor.world.pos, &vel, &accel,
+                                            (s16)(Rand_ZeroOne() * 25.0f) + 50, FHGFLASH_LIGHTBALL_LIGHTBLUE);
+        }
+        // Back to him, and it can't miss
+        this->work[FHGFIRE_FIRE_MODE] = FHGFIRE_LIGHT_BLUE;
+        this->work[FHGFIRE_RETURN_COUNT] = 100;
+        this->work[FHGFIRE_FX_TIMER] = 2;
+        this->actor.speedXZ = 14.0f;
+        this->actor.world.rot.y = (s16)(Math_FAtan2F(dxPG, dzPG) * (0x8000 / M_PI));
+        this->actor.world.rot.x = (s16)(Math_FAtan2F(dyPG, sqrtf(SQ(dxPG) + SQ(dzPG))) * (0x8000 / M_PI));
+        ZOP_GndRallyFlash(0.6f);
+        Audio_PlaySfxGeneral(byNayru ? NA_SE_IT_SHIELD_REFLECT_MG : NA_SE_IT_SWORD_REFLECT_MG,
+                             &player->actor.projectedPos, 4, &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
+                             &gSfxDefaultReverb);
+        Rumble_Request(this->actor.xyzDistToPlayerSq, 0xB4, 0x14, 0x64);
+        return BALL_FIZZLE;
+    }
+
+    // Closes in on Link
+    if (dist > 100.0f) {
+        Math_ApproachS(&this->actor.world.rot.y, (s16)(Math_FAtan2F(dxL, dzL) * (0x8000 / M_PI)), 3, 0x280);
+        Math_ApproachS(&this->actor.world.rot.x,
+                       (s16)(Math_FAtan2F(dyL, sqrtf(SQ(dxL) + SQ(dzL))) * (0x8000 / M_PI)), 3, 0x200);
+    }
+    if (dist <= 25.0f) {
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_HIT_THUNDER);
+        Actor_SetPlayerKnockback(play, &this->actor, 3.0f, this->actor.world.rot.y, 0.0f, 3, 0x10);
+        return BALL_BURST;
+    }
+    return BALL_FIZZLE;
+}
+
 void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
     f32 dxL;
     f32 dyL;
@@ -643,6 +713,10 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
         }
         switch (this->work[FHGFIRE_FIRE_MODE]) {
             case FHGFIRE_LIGHT_GREEN:
+                if (ZOP_IS_BURST_BALL) {
+                    killMode = EnFhgFire_ZopBurstBall(this, play, bossGnd, player, dxL, dyL, dzL);
+                    break;
+                }
                 canBottleReflect1 =
                     ((player->stateFlags1 & PLAYER_STATE1_SWINGING_BOTTLE) &&
                      (ABS((s16)(player->actor.shape.rot.y - (s16)(bossGnd->actor.yawTowardsPlayer + 0x8000))) <
@@ -747,9 +821,16 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                 if ((bossGnd->flyMode == GND_FLY_RETURN) && (this->work[FHGFIRE_RETURN_COUNT] < 100)) {
                     this->actor.world.rot.y = Math_FAtan2F(dxPG, dzPG) * (0x8000 / M_PI);
                     if ((sqrtf(SQ(dxPG) + SQ(dzPG)) < (150.0f + (this->actor.speedXZ * 8.0f)))) {
-                        this->work[FHGFIRE_FIRE_MODE] = FHGFIRE_LIGHT_REFLECT;
-                        bossGnd->returnSuccess = true;
-                        this->work[FHGFIRE_TIMER] = 8;
+                        if (BossGanondrof_ZopTryCatch(bossGnd, play, this->ZOP_RALLY_HITS)) {
+                            // ZeldaOOTProject: he catches it instead of hitting it back
+                            this->work[FHGFIRE_FIRE_MODE] = ZOP_FHGFIRE_ABSORB;
+                            this->ZOP_ABSORB_START_DIST =
+                                Math_Vec3f_DistXYZ(&this->actor.world.pos, &bossGnd->spearTip);
+                        } else {
+                            this->work[FHGFIRE_FIRE_MODE] = FHGFIRE_LIGHT_REFLECT;
+                            bossGnd->returnSuccess = true;
+                            this->work[FHGFIRE_TIMER] = 8;
+                        }
                     }
                 } else {
                     if (this->work[FHGFIRE_RETURN_COUNT] >= 100) {
@@ -774,6 +855,41 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                     }
                 }
                 break;
+            case ZOP_FHGFIRE_ABSORB: {
+                // Flies into his spear, getting smaller, and is gone
+                f32 dx = bossGnd->spearTip.x - this->actor.world.pos.x;
+                f32 dy = bossGnd->spearTip.y - this->actor.world.pos.y;
+                f32 dz = bossGnd->spearTip.z - this->actor.world.pos.z;
+                f32 d = sqrtf(SQ(dx) + SQ(dy) + SQ(dz));
+
+                this->work[FHGFIRE_FX_TIMER] = 2; // no collision on the way
+                this->actor.world.rot.y = (s16)(Math_FAtan2F(dx, dz) * (0x8000 / M_PI));
+                this->actor.world.rot.x = (s16)(Math_FAtan2F(dy, sqrtf(SQ(dx) + SQ(dz))) * (0x8000 / M_PI));
+                this->actor.speedXZ = CLAMP(d * 0.35f, 3.0f, 14.0f);
+                if (this->ZOP_ABSORB_START_DIST > 1.0f) {
+                    Actor_SetScale(&this->actor,
+                                   this->actor.scale.x * CLAMP(d / this->ZOP_ABSORB_START_DIST, 0.2f, 1.0f));
+                }
+                if (d < 15.0f) {
+                    Vec3f accel = { 0.0f, 0.0f, 0.0f };
+                    s16 i;
+
+                    for (i = 0; i < 20; i++) {
+                        Vec3f vel = { Rand_CenteredFloat(8.0f), Rand_CenteredFloat(8.0f), Rand_CenteredFloat(8.0f) };
+
+                        EffectSsFhgFlash_SpawnLightBall(play, &bossGnd->spearTip, &vel, &accel,
+                                                        (s16)(Rand_ZeroOne() * 60.0f) + 100,
+                                                        FHGFLASH_LIGHTBALL_LIGHTBLUE);
+                    }
+                    ZOP_GndRallyGlow(0);
+                    ZOP_GndRallyRain(false);
+                    this->actor.draw = NULL;
+                    this->work[FHGFIRE_KILL_TIMER] = 30;
+                    BossGanondrof_ZopAbsorbed(bossGnd, play);
+                    return;
+                }
+                break;
+            }
             case FHGFIRE_LIGHT_REFLECT:
                 if (this->work[FHGFIRE_TIMER] == 0) {
                     s16 i3;

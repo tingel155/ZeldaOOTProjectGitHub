@@ -118,4 +118,10 @@ typedef struct BossGanondrof {
     /* 0x052C */ ColliderCylinder colliderSpear;
 } BossGanondrof; // size = 0x0578
 
+// ZeldaOOTProject: catch-and-burst attack. He catches the ball of a rally, takes it in and bursts into several balls
+// (marked with this world.rot.z) that only a spin attack or Nayru's Love sends back.
+#define GND_ZOP_BURST_BALL 1
+s32 BossGanondrof_ZopTryCatch(BossGanondrof* boss, PlayState* play, s16 rallyHits);
+void BossGanondrof_ZopAbsorbed(BossGanondrof* boss, PlayState* play);
+
 #endif
