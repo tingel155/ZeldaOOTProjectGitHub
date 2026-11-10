@@ -33,7 +33,7 @@ static bool IsAffectedEnemy(s16 actorId) {
         case ACTOR_EN_GOMA: // Gohma Larvae and their eggs
             return true;
         default:
-            return ZOP_IsPearlArrow(actorId); // Gohma's phase 2 projectiles
+            return ZOP_IsPearlArrow(actorId) || ZOP_IsGohmaLaser(actorId); // Gohma's phase 2 attacks
     }
 }
 
@@ -69,6 +69,10 @@ extern "C" int ZOP_BossPhase2(void* bossRef, int baseHealth) {
     float startHealth = baseHealth * CVarGetFloat(CVAR_ZOP_DIFFICULTY("HealthMult"), 2.0f);
     s8 health = (s8)boss->colChkInfo.health;
     return health > 0 && health <= startHealth * 0.3f;
+}
+
+extern "C" int ZOP_TestPhase2Intro(void) {
+    return CVAR_DIFFICULTY_VALUE && CVarGetInteger(CVAR_ZOP_DIFFICULTY("TestPhase2Intro"), 0);
 }
 
 extern "C" float ZOP_EnemyStunMult(void) {

@@ -35,9 +35,20 @@ int ZOP_IsPearlArrow(short actorId);
 // texture data changed, so the caller must invalidate the texture cache for them (GohmaRecolor.cpp)
 int ZOP_GohmaSetRecolor(float amount);
 
+// Gohma phase 2: a tracking laser from the shooter's (an Actor*) eye, lasting ZOP_GOHMA_LASER_FRAMES (GohmaLaser.cpp)
+void ZOP_SpawnGohmaLaser(struct PlayState* play, void* shooter);
+void ZOP_StopGohmaLasers(struct PlayState* play);
+int ZOP_IsGohmaLaser(short actorId);
+
+// Testing aid: bosses skip straight to their phase 2 intro after the encounter cutscene (Difficulty.cpp)
+int ZOP_TestPhase2Intro(void);
+
 #ifdef __cplusplus
 }
 #endif
+
+// Aim + fire + fade frames of a Gohma laser
+#define ZOP_GOHMA_LASER_FRAMES 94
 
 // Picks the aggressive value when the difficulty option is on, the vanilla one otherwise
 #define ZOP_AGGRO(vanilla, aggressive) (ZOP_EnemyAggressive() ? (aggressive) : (vanilla))

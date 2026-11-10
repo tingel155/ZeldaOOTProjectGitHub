@@ -1,6 +1,7 @@
 #include "z_boss_goma.h"
 #include "textures/boss_title_cards/object_goma.h"
 #include "objects/object_goma/object_goma.h"
+#include "objects/gameplay_keep/gameplay_keep.h"
 #include "overlays/actors/ovl_En_Goma/z_en_goma.h"
 #include "overlays/actors/ovl_Door_Shutter/z_door_shutter.h"
 #include "overlays/actors/ovl_Door_Warp1/z_door_warp1.h"
@@ -64,6 +65,8 @@ void BossGoma_SpawnChildGohma(BossGoma* this, PlayState* play, s16 i);
 static u8 sZopPhase2Announced;
 static u8 sZopRecolorDirty;
 static s16 sZopRoarCamAngle;
+static u8 sZopUseLaser; // phase 2 shooting: laser (true) or pearl arrow volleys (false)
+static s16 sZopFloorShootCooldown;
 
 static s32 BossGoma_InPhase2(BossGoma* this) {
     return ZOP_BossPhase2(&this->actor, 10);
@@ -75,6 +78,7 @@ static s32 BossGoma_InPhase2(BossGoma* this) {
 static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play);
 static void BossGoma_Phase2Slam(BossGoma* this, PlayState* play);
 static void BossGoma_SetupPhase2Roar(BossGoma* this, PlayState* play);
+static void BossGoma_Phase2FloorShoot(BossGoma* this, PlayState* play);
 void BossGoma_PlayEffectsAndSfx(BossGoma* this, PlayState* play, s16 arg2, s16 amountMinus1);
 void BossGoma_SetupFloorMain(BossGoma* this);
 
@@ -92,6 +96,12 @@ static void BossGoma_SetupPhase2Slam(BossGoma* this) {
 }
 
 static void BossGoma_Phase2Slam(BossGoma* this, PlayState* play) {
+    if (ZOP_TestPhase2Intro() && !sZopPhase2Announced) {
+        // Testing aid (see BossGoma_Init): health is only scaled after Init, so drop it to phase 2 here
+        this->actor.colChkInfo.health = (u8)CLAMP_MIN(this->actor.colChkInfo.health * 3 / 10, 1);
+        sZopPhase2Announced = true;
+    }
+
     SkelAnime_Update(&this->skelanime);
     Math_ApproachS(&this->actor.shape.rot.x, 0, 2, 0xBB8);
     Math_ApproachS(&this->actor.world.rot.y, this->actor.yawTowardsPlayer, 3, 0x7D0);
@@ -147,6 +157,22 @@ static void BossGoma_SetupPhase2Roar(BossGoma* this, PlayState* play) {
     Audio_QueueSeqCmd(0x1 << 28 | SEQ_PLAYER_BGM_MAIN << 24 | 0x100FF);
 }
 
+/**
+ * Light bluish haze over the room (fog brightened, tinted blue and pulled in a little, a touch of blue ambient light).
+ * intensity 0..1, 0 restores the room's own lighting.
+ */
+static void BossGoma_SetHaze(PlayState* play, f32 intensity) {
+    f32 fogNear = play->envCtx.lightSettings.fogNear;
+
+    play->envCtx.adjFogColor[0] = (s16)(35.0f * intensity);
+    play->envCtx.adjFogColor[1] = (s16)(55.0f * intensity);
+    play->envCtx.adjFogColor[2] = (s16)(85.0f * intensity);
+    play->envCtx.adjAmbientColor[0] = (s16)(12.0f * intensity);
+    play->envCtx.adjAmbientColor[1] = (s16)(18.0f * intensity);
+    play->envCtx.adjAmbientColor[2] = (s16)(30.0f * intensity);
+    play->envCtx.adjFogNear = (fogNear > 900.0f) ? (s16)((900.0f - fogNear) * intensity) : 0;
+}
+
 static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
     s16 elapsed = BOSSGOMA_PHASE2_ROAR_FRAMES - this->framesUntilNextAction;
@@ -164,14 +190,20 @@ static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
     Math_ApproachF(&this->eyeIrisScaleY, 1.3f + 0.25f * Math_CosS(elapsed * 0x1500), 0.5f, 0.3f);
     this->visualState = VISUALSTATE_RED;
 
-    // Room lighting: blend to the boss room's light setting 3, the fog that rolls in when Gohma dissolves at the end
-    // of the fight, and back to the fight lighting (setting 4) for the shot on Link
-    if (elapsed == 8) {
-        play->envCtx.unk_BF = 3;
-        play->envCtx.unk_D6 = 0xFFFF;
-    } else if (elapsed == BOSSGOMA_PHASE2_LINK_SHOT_FRAME) {
-        play->envCtx.unk_BF = 4;
-        play->envCtx.unk_D6 = 0xFFFF;
+    // A subtle, light bluish haze: swells in with the first scream and clears during the shot on Link
+    {
+        f32 haze;
+
+        if (elapsed < 8) {
+            haze = 0.0f;
+        } else if (elapsed < 30) {
+            haze = (elapsed - 8) / 22.0f;
+        } else if (elapsed < BOSSGOMA_PHASE2_ROAR_FRAMES - 25) {
+            haze = 1.0f;
+        } else {
+            haze = this->framesUntilNextAction / 25.0f;
+        }
+        BossGoma_SetHaze(play, haze);
     }
 
     if (elapsed < BOSSGOMA_PHASE2_LINK_SHOT_FRAME) {
@@ -192,8 +224,17 @@ static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
 
         if (elapsed == BOSSGOMA_PHASE2_LINK_SHOT_FRAME) {
             player->actor.shape.rot.y = player->actor.world.rot.y = player->yaw = linkYaw;
-            Player_SetCsActionWithHaltedActors(play, &this->actor, LINK_IS_ADULT ? 5 : 59); // startled animation
+            // One startled step back: the backstep hop, plus his "surprised" voice
+            LinkAnimation_Change(play, &player->skelAnime, (LinkAnimationHeader*)gPlayerAnim_link_normal_backspace,
+                                 1.0f, 0.0f, Animation_GetLastFrame(gPlayerAnim_link_normal_backspace),
+                                 ANIMMODE_ONCE, -3.0f);
+            Audio_PlayActorSound2(&player->actor, LINK_IS_ADULT ? NA_SE_VO_LI_SURPRISE : NA_SE_VO_LI_SURPRISE_KID);
             Play_CameraSetFov(play, this->subCameraId, 16.0f);
+        }
+        if (elapsed < BOSSGOMA_PHASE2_LINK_SHOT_FRAME + 7) {
+            // Slide back about 20 units along the step
+            player->actor.world.pos.x -= Math_SinS(linkYaw) * 3.0f;
+            player->actor.world.pos.z -= Math_CosS(linkYaw) * 3.0f;
         }
         player->actor.shape.face = 7; // wide eyes, grimacing mouth (PLAYER_FACE_SURPRISED in the decomp)
 
@@ -216,14 +257,56 @@ static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
         this->subCameraId = 0;
         func_80064534(play, &play->csCtx);
         Player_SetCsActionWithHaltedActors(play, &this->actor, 7);
+        BossGoma_SetHaze(play, 0.0f);
         this->disableGameplayLogic = false;
         this->invincibilityFrames = 10;
         Audio_QueueSeqCmd(SEQ_PLAYER_BGM_MAIN << 24 | NA_BGM_BOSS);
+        sZopFloorShootCooldown = 60;
 
         // Out of patience: she backs off, climbs the nearest wall and starts shooting
         BossGoma_SetupFloorMain(this);
         this->patienceTimer = 0;
     }
+}
+
+#define BOSSGOMA_FLOOR_SHOOT_FRAMES (ZOP_GOHMA_LASER_FRAMES + 8)
+
+/**
+ * Phase 2: Gohma stops on the floor, rears up and fires either a tracking laser or two pearl arrow volleys.
+ * Her eye stays open, so a slingshot hit can still stun her out of it.
+ */
+static void BossGoma_SetupPhase2FloorShoot(BossGoma* this) {
+    Animation_Change(&this->skelanime, &gGohmaStandAnim, BOSSGOMA_P2_SPEED(1.0f), 0.0f,
+                     Animation_GetLastFrame(&gGohmaStandAnim), ANIMMODE_LOOP, -8.0f);
+    this->actionFunc = BossGoma_Phase2FloorShoot;
+    this->framesUntilNextAction = BOSSGOMA_FLOOR_SHOOT_FRAMES;
+    sZopUseLaser = Rand_ZeroOne() < 0.5f;
+}
+
+static void BossGoma_Phase2FloorShoot(BossGoma* this, PlayState* play) {
+    s16 elapsed = BOSSGOMA_FLOOR_SHOOT_FRAMES - this->framesUntilNextAction;
+
+    SkelAnime_Update(&this->skelanime);
+    Math_ApproachZeroF(&this->actor.speedXZ, 0.5f, 2.0f);
+    Math_ApproachS(&this->actor.shape.rot.x, 0, 2, 0xBB8);
+    Math_ApproachS(&this->actor.world.rot.y, this->actor.yawTowardsPlayer, 4, 0x5DC);
+
+    if (elapsed == 4) {
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_CRY1);
+        if (sZopUseLaser) {
+            ZOP_SpawnGohmaLaser(play, &this->actor);
+        }
+    }
+    if (!sZopUseLaser && (elapsed == 14 || elapsed == 44)) {
+        ZOP_SpawnPearlVolley(play, &this->actor, 5);
+    }
+    if (this->framesUntilNextAction == 0 || (!sZopUseLaser && elapsed >= 70)) {
+        BossGoma_SetupFloorMain(this);
+        sZopFloorShootCooldown = (s16)Rand_S16Offset(90, 70);
+    }
+
+    this->eyeState = EYESTATE_IRIS_FOLLOW_NO_IFRAMES;
+    this->visualState = VISUALSTATE_RED;
 }
 
 const ActorInit Boss_Goma_InitVars = {
@@ -508,6 +591,16 @@ void BossGoma_Init(Actor* thisx, PlayState* play) {
     this->actor.gravity = 0.0f;
     BossGoma_SetupEncounter(this, play);
     this->actor.colChkInfo.health = 10;
+
+    if (ZOP_TestPhase2Intro()) {
+        // Testing aid: skip the encounter, Gohma starts on the floor and goes straight into her phase 2 intro
+        this->actor.world.pos.y = -640.0f;
+        this->actor.shape.rot.x = 0;
+        this->actor.gravity = -2.0f;
+        this->disableGameplayLogic = false;
+        play->envCtx.unk_BF = 4;
+        BossGoma_SetupPhase2Slam(this);
+    }
     this->actor.colChkInfo.mass = MASS_IMMOVABLE;
     sZopPhase2Announced = false;
     // Undo a recolor left over from an earlier fight; the texture cache is flushed on the next draw
@@ -663,6 +756,7 @@ void BossGoma_SetupCeilingPrepareSpawnGohmas(BossGoma* this) {
                      Animation_GetLastFrame(&gGohmaPrepareEggsAnim), ANIMMODE_LOOP, -10.0f);
     this->actionFunc = BossGoma_CeilingPrepareSpawnGohmas;
     this->framesUntilNextAction = BossGoma_InPhase2(this) ? BOSSGOMA_PHASE2_VOLLEY_FRAMES : ZOP_AGGRO(70, 40);
+    sZopUseLaser = Rand_ZeroOne() < 0.5f;
 }
 
 void BossGoma_SetupWallClimb(BossGoma* this) {
@@ -1151,6 +1245,7 @@ void BossGoma_Encounter(BossGoma* this, PlayState* play) {
                 this->patienceTimer = ZOP_AGGRO(200, 400);
                 func_80064534(play, &play->csCtx);
                 Player_SetCsActionWithHaltedActors(play, &this->actor, 7);
+
             }
             break;
     }
@@ -1600,6 +1695,10 @@ void BossGoma_FloorStunned(BossGoma* this, PlayState* play) {
 
     if (this->framesUntilNextAction == 0) {
         BossGoma_SetupFloorMain(this);
+        if (BossGoma_InPhase2(this) && Rand_ZeroOne() < 0.5f) {
+            // Phase 2: half the time she keeps fighting on the floor instead of retreating to the ceiling
+            this->patienceTimer = 160;
+        }
         if (this->patienceTimer == 0 && this->actor.xzDistToPlayer < 130.0f) {
             this->timer = 20;
         }
@@ -1708,10 +1807,15 @@ void BossGoma_CeilingPrepareSpawnGohmas(BossGoma* this, PlayState* play) {
     SkelAnime_Update(&this->skelanime);
 
     if (BossGoma_InPhase2(this)) {
-        // Brooding pose, but three volleys of pearl arrows instead of eggs; then drop back to the floor.
-        // The eye stays shut meanwhile (see BossGoma_UpdateEye).
-        if (this->framesUntilNextAction == 90 || this->framesUntilNextAction == 62 ||
-            this->framesUntilNextAction == 34) {
+        // Brooding pose, but instead of eggs either three volleys of pearl arrows or a tracking laser; then drop back
+        // to the floor. The eye stays shut meanwhile (see BossGoma_UpdateEye).
+        if (sZopUseLaser) {
+            if (this->framesUntilNextAction == 100) {
+                ZOP_SpawnGohmaLaser(play, &this->actor);
+                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_CRY1);
+            }
+        } else if (this->framesUntilNextAction == 90 || this->framesUntilNextAction == 62 ||
+                   this->framesUntilNextAction == 34) {
             ZOP_SpawnPearlVolley(play, &this->actor, 5);
             Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_CRY1);
         }
@@ -1805,9 +1909,18 @@ void BossGoma_FloorMain(BossGoma* this, PlayState* play) {
         this->doNotMoveThisFrame = true;
     }
 
-    // Phase 2: loses patience sooner, so she retreats and climbs to the ceiling more often
-    if (BossGoma_InPhase2(this) && this->patienceTimer > 120) {
-        this->patienceTimer = 120;
+    // Phase 2: mixes it up between climbing to the ceiling (patience runs out) and shooting from the floor
+    if (BossGoma_InPhase2(this)) {
+        if (this->patienceTimer > 220) {
+            this->patienceTimer = 220;
+        }
+        if (sZopFloorShootCooldown > 0) {
+            sZopFloorShootCooldown--;
+        } else if (this->patienceTimer > 20 && this->actor.xzDistToPlayer > 160.0f &&
+                   (this->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
+            BossGoma_SetupPhase2FloorShoot(this);
+            return;
+        }
     }
 
     if (Animation_OnFrame(&this->skelanime, 15.0f)) {
@@ -2040,6 +2153,7 @@ void BossGoma_UpdateHit(BossGoma* this, PlayState* play) {
 
             if (this->actionFunc == BossGoma_CeilingMoveToCenter || this->actionFunc == BossGoma_CeilingIdle ||
                 this->actionFunc == BossGoma_CeilingPrepareSpawnGohmas) {
+                ZOP_StopGohmaLasers(play);
                 BossGoma_SetupFallStruckDown(this);
                 Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_DAM2);
             } else if (this->actionFunc == BossGoma_FloorStunned &&
@@ -2068,6 +2182,7 @@ void BossGoma_UpdateHit(BossGoma* this, PlayState* play) {
                 Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_DAM2);
                 Audio_StopSfxById(NA_SE_EN_GOMA_CRY1);
                 this->invincibilityFrames = 10;
+                ZOP_StopGohmaLasers(play);
                 BossGoma_SetupFloorStunned(this);
                 this->sfxFaintTimer = 100;
 
