@@ -12,6 +12,9 @@
 //   TurnSpeed        factor on how fast Link turns while running and how fast his body follows (default 2.5)
 //   Acceleration     factor on how fast Link speeds up when running off (default 1.5)
 //   QuickTurn        sharp turns spin Link around in a few frames instead of braking to a stop first (default 1)
+//   LockOnLeap       locked on, A with the stick forward only leaps toward the target; the sword button in the air
+//                    makes it the jump attack (default 1)
+//   LeapSpeed        forward speed of that leap (default 8)
 //   CameraCurve      0..1, how much small stick deflections are slowed down for fine aiming (default 0.5)
 //   PresetVersion    last applied version of the settings preset; the preset is applied once per version, so
 //                    later changes in the menus are kept
@@ -319,6 +322,14 @@ extern "C" float ZOP_PlayerAccel(float vanillaAccel) {
         return vanillaAccel;
     }
     return vanillaAccel * CVarGetFloat(CVAR_ZOP_CONTROLS("Acceleration"), 1.5f);
+}
+
+extern "C" int ZOP_LockOnLeap(void) {
+    return ControlsEnabled() && CVarGetInteger(CVAR_ZOP_CONTROLS("LockOnLeap"), 1);
+}
+
+extern "C" float ZOP_LockOnLeapSpeed(void) {
+    return CVarGetFloat(CVAR_ZOP_CONTROLS("LeapSpeed"), 8.0f);
 }
 
 extern "C" int ZOP_PlayerQuickTurn(void) {

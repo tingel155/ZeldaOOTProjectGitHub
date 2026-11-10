@@ -60,6 +60,12 @@ short ZOP_PlayerTurnRate(short vanillaRate);
 float ZOP_PlayerAccel(float vanillaAccel);
 int ZOP_PlayerQuickTurn(void);
 
+// z_player.c, A while locked on with the stick forward/neutral: nonzero when Link only leaps toward the target
+// instead of doing the jump attack right away; the jump attack then comes from the sword button in the air
+// (ModernControls.cpp)
+int ZOP_LockOnLeap(void);
+float ZOP_LockOnLeapSpeed(void);
+
 // z_camera.c, Camera_Free: softens the right-stick camera input (yaw/pitch deltas of this frame)
 void ZOP_SmoothFreeLook(float* camX, float* camY, int frame);
 

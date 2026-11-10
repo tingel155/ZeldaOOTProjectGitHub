@@ -6304,7 +6304,8 @@ s32 func_8083BB20(Player* this) {
 
 s32 func_8083BBA0(Player* this, PlayState* play) {
     if (func_8083BB20(this) && (sFloorType != 7)) {
-        func_8083BA90(play, this, PLAYER_MWA_JUMPSLASH_START, 3.0f, 4.5f);
+        func_8083BA90(play, this, PLAYER_MWA_JUMPSLASH_START,
+                      ZOP_LockOnLeap() ? CLAMP(this->linearVelocity, 3.0f, 8.0f) : 3.0f, 4.5f);
         return 1;
     }
 
@@ -6364,7 +6365,15 @@ s32 Player_ActionHandler_10(Player* this, PlayState* play) {
                     }
                 } else {
                     if ((Player_GetMeleeWeaponHeld(this) != 0) && Player_CanUpdateItems(this)) {
-                        func_8083BA90(play, this, PLAYER_MWA_JUMPSLASH_START, 5.0f, 5.0f);
+                        if (ZOP_LockOnLeap()) {
+                            // ZeldaOOTProject: A only leaps toward the target, like A dodges in the other directions;
+                            // pressing the sword button in the air turns the leap into the jump attack
+                            func_8083BCD0(this, play, PLAYER_STICK_DIR_FORWARD);
+                            this->linearVelocity = ZOP_LockOnLeapSpeed();
+                            this->actor.velocity.y = 6.0f * sWaterSpeedFactor;
+                        } else {
+                            func_8083BA90(play, this, PLAYER_MWA_JUMPSLASH_START, 5.0f, 5.0f);
+                        }
                     } else {
                         Player_SetupRoll(this, play);
                     }
