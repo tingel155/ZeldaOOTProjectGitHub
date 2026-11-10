@@ -25,6 +25,7 @@ namespace {
 constexpr int kFullGlowHits = 16; // hits until the room is fully lit
 float sTarget = 0.0f;
 float sGlow = 0.0f;
+float sFlash = 0.0f; // bright flicker on top of the glow, decays fast
 bool sApplied = false;
 
 // Same haze as Gohma's (BossGoma_SetHaze): brightened bluish fog, a touch of blue ambient light, fog pulled in
@@ -54,13 +55,24 @@ void Tick() {
     // Eases in quickly with every hit, fades out slowly once the rally is over
     float step = (sTarget > sGlow) ? 0.08f : 0.02f;
     Math_ApproachF(&sGlow, sTarget, 1.0f, step);
-    if (sGlow > 0.0f || sApplied) {
-        ApplyHaze(play, sGlow);
-        sApplied = sGlow > 0.0f;
+    // The flash flickers while it fades
+    float flash = 0.0f;
+    if (sFlash > 0.0f) {
+        flash = sFlash * (0.6f + 0.4f * Rand_ZeroOne()) * 2.5f;
+        sFlash = std::max(0.0f, sFlash - 0.12f);
+    }
+    float intensity = sGlow + flash;
+    if (intensity > 0.0f || sApplied) {
+        ApplyHaze(play, intensity);
+        sApplied = intensity > 0.0f;
     }
 }
 
 } // namespace
+
+extern "C" void ZOP_GndRallyFlash(void) {
+    sFlash = 1.0f;
+}
 
 extern "C" void ZOP_GndRallyGlow(int hits) {
     sTarget = std::clamp((float)hits / kFullGlowHits, 0.0f, 1.0f);

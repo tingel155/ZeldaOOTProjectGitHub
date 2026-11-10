@@ -60,21 +60,31 @@ static void EnFhgFire_ZopRallyHit(EnFhgFire* this, PlayState* play, f32 tx, f32 
     // from the 9th lightning bolts lash out in all directions, with thunder; both grow with the rally
     if (hits >= 6) {
         s16 i;
-        s16 count = CLAMP_MAX(hits - 4, 14) * 2;
-        Vec3f accel = { 0.0f, -0.35f, 0.0f };
+        s16 count = CLAMP_MAX(hits - 3, 14) * 3;
+        Vec3f accel = { 0.0f, -0.15f, 0.0f };
 
         for (i = 0; i < count; i++) {
             Vec3f vel;
-            f32 speed = 6.0f + Rand_ZeroOne() * (4.0f + hits * 0.4f);
+            f32 speed = 4.0f + Rand_ZeroOne() * (3.0f + hits * 0.3f);
             s16 yaw = (s16)(Rand_ZeroOne() * 0xFFFF);
-            f32 up = Rand_CenteredFloat(1.4f);
+            f32 up = Rand_CenteredFloat(1.2f);
 
             vel.x = Math_SinS(yaw) * speed;
             vel.y = up * speed;
             vel.z = Math_CosS(yaw) * speed;
+            // Big, bright sparks (the trail balls are about 150-230)
             EffectSsFhgFlash_SpawnLightBall(play, &this->actor.world.pos, &vel, &accel,
-                                            (s16)(Rand_ZeroOne() * 40.0f) + 40,
+                                            (s16)(Rand_ZeroOne() * 120.0f) + 160,
                                             (i & 1) ? FHGFLASH_LIGHTBALL_LIGHTBLUE : FHGFLASH_LIGHTBALL_GREEN);
+        }
+        // and a burst of glitter right at the impact
+        for (i = 0; i < count / 2; i++) {
+            Vec3f vel = { Rand_CenteredFloat(14.0f), Rand_CenteredFloat(14.0f), Rand_CenteredFloat(14.0f) };
+            Vec3f glitterAccel = { 0.0f, -0.3f, 0.0f };
+            Color_RGBA8 prim = { 255, 255, 255, 255 };
+            Color_RGBA8 env = { 100, 255, 200, 255 };
+
+            EffectSsKiraKira_SpawnDispersed(play, &this->actor.world.pos, &vel, &glitterAccel, &prim, &env, 3000, 16);
         }
     }
     if (hits >= 9) {
@@ -91,6 +101,7 @@ static void EnFhgFire_ZopRallyHit(EnFhgFire* this, PlayState* play, f32 tx, f32 
                                     (s16)(6 + Rand_ZeroOne() * 3.0f), (s16)CLAMP_MAX(1 + hits / 5, 4));
         }
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_THUNDER);
+        ZOP_GndRallyFlash();
         if (hits >= 13) {
             Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_SPARK);
         }
