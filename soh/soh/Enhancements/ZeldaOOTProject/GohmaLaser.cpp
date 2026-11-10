@@ -30,8 +30,8 @@ constexpr int kFireFrames = 64;
 constexpr int kFadeFrames = 8;
 static_assert(kAimFrames + kFireFrames + kFadeFrames == ZOP_GOHMA_LASER_FRAMES, "keep the header in sync");
 constexpr float kStartAhead = 130.0f; // impact starts this far in front of Link, toward Gohma
-constexpr float kAimSpeed = 2.0f;
-constexpr float kTrackSpeed = 4.3f;   // Link runs at ~6 units/frame
+constexpr float kAimSpeed = 3.0f;
+constexpr float kTrackSpeed = 5.6f;   // just below Link's running speed: sprinting or side-stepping still escapes it
 constexpr int kHitCooldown = 20;
 
 struct GohmaLaser {

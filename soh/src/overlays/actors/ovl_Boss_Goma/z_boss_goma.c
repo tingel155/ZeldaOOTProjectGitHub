@@ -65,7 +65,24 @@ void BossGoma_SpawnChildGohma(BossGoma* this, PlayState* play, s16 i);
 static u8 sZopPhase2Announced;
 static u8 sZopRecolorDirty;
 static s16 sZopRoarCamAngle;
-static u8 sZopUseLaser; // phase 2 shooting: laser (true) or pearl arrow volleys (false)
+// Phase 2 shooting: which attacks the current salvo uses (both can run at the same time)
+#define BOSSGOMA_ATTACK_LASER (1 << 0)
+#define BOSSGOMA_ATTACK_VOLLEYS (1 << 1)
+static u8 sZopAttack;
+
+/**
+ * Picks the next salvo: laser alone, arrow volleys alone, or both at once (about a third each)
+ */
+static u8 BossGoma_PickAttack(void) {
+    f32 r = Rand_ZeroOne();
+
+    if (r < 0.33f) {
+        return BOSSGOMA_ATTACK_LASER;
+    } else if (r < 0.66f) {
+        return BOSSGOMA_ATTACK_VOLLEYS;
+    }
+    return BOSSGOMA_ATTACK_LASER | BOSSGOMA_ATTACK_VOLLEYS;
+}
 static s16 sZopFloorShootCooldown;
 
 static s32 BossGoma_InPhase2(BossGoma* this) {
@@ -273,7 +290,7 @@ static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
 #define BOSSGOMA_FLOOR_SHOOT_FRAMES (ZOP_GOHMA_LASER_FRAMES + 8)
 
 /**
- * Phase 2: Gohma stops on the floor, rears up and fires either a tracking laser or two pearl arrow volleys.
+ * Phase 2: Gohma stops on the floor, rears up and fires a tracking laser, three pearl arrow volleys or both.
  * Her eye stays open, so a slingshot hit can still stun her out of it.
  */
 static void BossGoma_SetupPhase2FloorShoot(BossGoma* this) {
@@ -281,7 +298,7 @@ static void BossGoma_SetupPhase2FloorShoot(BossGoma* this) {
                      Animation_GetLastFrame(&gGohmaStandAnim), ANIMMODE_LOOP, -8.0f);
     this->actionFunc = BossGoma_Phase2FloorShoot;
     this->framesUntilNextAction = BOSSGOMA_FLOOR_SHOOT_FRAMES;
-    sZopUseLaser = Rand_ZeroOne() < 0.7f;
+    sZopAttack = BossGoma_PickAttack();
 }
 
 static void BossGoma_Phase2FloorShoot(BossGoma* this, PlayState* play) {
@@ -294,14 +311,14 @@ static void BossGoma_Phase2FloorShoot(BossGoma* this, PlayState* play) {
 
     if (elapsed == 4) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_CRY1);
-        if (sZopUseLaser) {
+        if (sZopAttack & BOSSGOMA_ATTACK_LASER) {
             ZOP_SpawnGohmaLaser(play, &this->actor);
         }
     }
-    if (!sZopUseLaser && (elapsed == 14 || elapsed == 44)) {
+    if ((sZopAttack & BOSSGOMA_ATTACK_VOLLEYS) && (elapsed == 14 || elapsed == 44 || elapsed == 74)) {
         ZOP_SpawnPearlVolley(play, &this->actor, 5);
     }
-    if (this->framesUntilNextAction == 0 || (!sZopUseLaser && elapsed >= 70)) {
+    if (this->framesUntilNextAction == 0 || (!(sZopAttack & BOSSGOMA_ATTACK_LASER) && elapsed >= 80)) {
         BossGoma_SetupFloorMain(this);
         sZopFloorShootCooldown = (s16)Rand_S16Offset(90, 70);
     }
@@ -757,7 +774,7 @@ void BossGoma_SetupCeilingPrepareSpawnGohmas(BossGoma* this) {
                      Animation_GetLastFrame(&gGohmaPrepareEggsAnim), ANIMMODE_LOOP, -10.0f);
     this->actionFunc = BossGoma_CeilingPrepareSpawnGohmas;
     this->framesUntilNextAction = BossGoma_InPhase2(this) ? BOSSGOMA_PHASE2_VOLLEY_FRAMES : ZOP_AGGRO(70, 40);
-    sZopUseLaser = Rand_ZeroOne() < 0.7f;
+    sZopAttack = BossGoma_PickAttack();
 }
 
 void BossGoma_SetupWallClimb(BossGoma* this) {
@@ -1808,15 +1825,15 @@ void BossGoma_CeilingPrepareSpawnGohmas(BossGoma* this, PlayState* play) {
     SkelAnime_Update(&this->skelanime);
 
     if (BossGoma_InPhase2(this)) {
-        // Brooding pose, but instead of eggs either three volleys of pearl arrows or a tracking laser; then drop back
+        // Brooding pose, but instead of eggs three volleys of pearl arrows, a tracking laser or both; then drop back
         // to the floor. The eye stays shut meanwhile (see BossGoma_UpdateEye).
-        if (sZopUseLaser) {
-            if (this->framesUntilNextAction == 100) {
-                ZOP_SpawnGohmaLaser(play, &this->actor);
-                Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_CRY1);
-            }
-        } else if (this->framesUntilNextAction == 90 || this->framesUntilNextAction == 62 ||
-                   this->framesUntilNextAction == 34) {
+        if ((sZopAttack & BOSSGOMA_ATTACK_LASER) && this->framesUntilNextAction == 100) {
+            ZOP_SpawnGohmaLaser(play, &this->actor);
+            Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_CRY1);
+        }
+        if ((sZopAttack & BOSSGOMA_ATTACK_VOLLEYS) &&
+            (this->framesUntilNextAction == 90 || this->framesUntilNextAction == 62 ||
+             this->framesUntilNextAction == 34)) {
             ZOP_SpawnPearlVolley(play, &this->actor, 5);
             Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_CRY1);
         }
