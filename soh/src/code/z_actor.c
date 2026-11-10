@@ -14,6 +14,7 @@
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/Enhancements/nametag.h"
+#include "soh/Enhancements/ZeldaOOTProject/ZeldaOOTProjectHooks.h"
 
 #include "soh/ActorDB.h"
 #include "soh/OTRGlobals.h"
@@ -1902,7 +1903,8 @@ f32 Attention_WeightedDistToPlayerSq(Actor* actor, Player* player, s16 arg2) {
         }
     }
 
-    if (yawTempAbs > 0x2AAA) {
+    // ZeldaOOTProject: bosses can be locked onto within 90 degrees of where Link looks instead of 60
+    if (yawTempAbs > ((ZOP_DifficultyEnabled() && actor->category == ACTORCAT_BOSS) ? 0x4000 : 0x2AAA)) {
         return FLT_MAX;
     }
 

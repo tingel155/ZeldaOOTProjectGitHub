@@ -1098,6 +1098,10 @@ void BossGoma_Init(Actor* thisx, PlayState* play) {
     BossGoma* this = (BossGoma*)thisx;
 
     Actor_ProcessInitChain(&this->actor, sInitChain);
+    // ZeldaOOTProject: lock-on reaches much further (1000 instead of 280), also up to the ceiling
+    if (ZOP_DifficultyEnabled()) {
+        this->actor.targetMode = 5;
+    }
     ActorShape_Init(&this->actor.shape, 4000.0f, ActorShadow_DrawCircle, 150.0f);
     SkelAnime_Init(play, &this->skelanime, &gGohmaSkel, &gGohmaIdleCrouchedAnim, NULL, NULL, 0);
     {
