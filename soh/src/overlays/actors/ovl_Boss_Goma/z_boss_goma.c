@@ -148,7 +148,7 @@ static f32 sZopWaveInner = 0.5f;
 static f32 sZopWaveRadius = 520.0f;
 static s16 sZopWaveDamage = 0;
 
-// Phase 2: small shockwave when she drops from the ceiling; it hurts, so standing right under her doesn't pay off
+// Small shockwave when she lands (from the ceiling, or her hops); it hurts, so standing right under her doesn't pay off
 static void BossGoma_SetupLandingWave(void) {
     sZopWaveMaxScale = 0.75f;
     sZopWaveInner = 0.0f;
@@ -185,6 +185,17 @@ static void BossGoma_UpdateShockwave(void) {
     }
 }
 
+// Hop attack: she leaps from spot to spot close to Link, and every landing sends a small damaging shockwave, so he has
+// to keep moving
+static s16 sZopHopCooldown;
+static s16 sZopHopsLeft;
+static s16 sZopHopTimer;   // wind-up / pause frames before the next leap (0 while in the air)
+static u8 sZopHopAirborne;
+static f32 sZopHopFloorY; // floor height at takeoff: she lands there at the latest (the floor check can miss her)
+#define BOSSGOMA_HOP_FLIGHT_FRAMES 20
+#define BOSSGOMA_HOP_WINDUP_FRAMES 8
+#define BOSSGOMA_HOP_PAUSE_FRAMES 10
+
 // Flash of light on the eye when it opens (frames left)
 static s16 sZopEyeFlashTimer;
 #define BOSSGOMA_EYE_FLASH_FRAMES 12
@@ -209,6 +220,8 @@ static void BossGoma_SetupPhase2Barrage(BossGoma* this);
 static void BossGoma_Phase2FakeDeath(BossGoma* this, PlayState* play);
 static void BossGoma_SetupPhase2FakeDeath(BossGoma* this, PlayState* play);
 static s32 BossGoma_TryBarrage(BossGoma* this);
+static void BossGoma_Hop(BossGoma* this, PlayState* play);
+static s32 BossGoma_TryHop(BossGoma* this, PlayState* play);
 void BossGoma_PlayEffectsAndSfx(BossGoma* this, PlayState* play, s16 arg2, s16 amountMinus1);
 void BossGoma_SetupFloorMain(BossGoma* this);
 
@@ -824,6 +837,103 @@ static void BossGoma_Phase2Barrage(BossGoma* this, PlayState* play) {
     }
 }
 
+/**
+ * Hop attack: starts once its cooldown is over and Link is neither too close nor too far
+ */
+static s32 BossGoma_TryHop(BossGoma* this, PlayState* play) {
+    if (!ZOP_DifficultyEnabled() || sZopHopCooldown > 0 || this->actor.xzDistToPlayer < 150.0f ||
+        this->actor.xzDistToPlayer > 650.0f || !(this->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
+        return false;
+    }
+    Animation_Change(&this->skelanime, &gGohmaPrepareAttackAnim, 1.0f, 0.0f,
+                     Animation_GetLastFrame(&gGohmaPrepareAttackAnim), ANIMMODE_ONCE, -5.0f);
+    this->actionFunc = BossGoma_Hop;
+    this->actor.speedXZ = 0.0f;
+    this->actor.gravity = -2.0f;
+    this->patienceTimer = 200; // her eye can be hit and stun her out of it
+    // Phase 2: 3-4 hops, every 20-28 s; phase 1: 2-3 hops, every 30-40 s
+    if (sZopPhase2Announced) {
+        sZopHopsLeft = 3 + (Rand_ZeroOne() < 0.5f);
+        sZopHopCooldown = (s16)Rand_S16Offset(400, 160);
+    } else {
+        sZopHopsLeft = 2 + (Rand_ZeroOne() < 0.5f);
+        sZopHopCooldown = (s16)Rand_S16Offset(600, 200);
+    }
+    sZopHopTimer = BOSSGOMA_HOP_WINDUP_FRAMES;
+    sZopHopAirborne = false;
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_CRY1);
+    return true;
+}
+
+static void BossGoma_Hop(BossGoma* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+
+    SkelAnime_Update(&this->skelanime);
+    Math_ApproachS(&this->actor.shape.rot.x, 0, 2, 0xBB8);
+    this->patienceTimer = 200;
+    if (sZopPhase2Announced) {
+        this->visualState = VISUALSTATE_RED;
+    }
+
+    if (sZopHopAirborne) {
+        // In the air: stop at walls; land, then a short pause before the next leap
+        if (this->actor.bgCheckFlags & BGCHECKFLAG_WALL) {
+            this->actor.speedXZ = 0.0f;
+        }
+        if (this->actor.velocity.y <= 0.0f &&
+            ((this->actor.bgCheckFlags & BGCHECKFLAG_GROUND) || this->actor.world.pos.y <= sZopHopFloorY)) {
+            if (this->actor.world.pos.y < sZopHopFloorY) {
+                this->actor.world.pos.y = sZopHopFloorY;
+            }
+            sZopHopAirborne = false;
+            this->actor.speedXZ = 0.0f;
+            this->actor.velocity.y = 0.0f;
+            Animation_Change(&this->skelanime, &gGohmaLandAnim, 1.5f, 0.0f, Animation_GetLastFrame(&gGohmaLandAnim),
+                             ANIMMODE_ONCE, -2.0f);
+            BossGoma_PlayEffectsAndSfx(this, play, 0, 6);
+            Actor_RequestQuakeAndRumble(&this->actor, play, 5, 10);
+            BossGoma_SetupLandingWave();
+            BossGoma_SpawnShockwave(this, this->actor.world.pos.y);
+            sZopHopsLeft--;
+            sZopHopTimer = BOSSGOMA_HOP_PAUSE_FRAMES;
+        }
+        return;
+    }
+
+    Math_ApproachS(&this->actor.world.rot.y, this->actor.yawTowardsPlayer, 3, 0x1000);
+    if (sZopHopTimer > 0) {
+        sZopHopTimer--;
+        return;
+    }
+
+    if (sZopHopsLeft <= 0) {
+        BossGoma_SetupFloorMain(this);
+        return;
+    }
+
+    // Leap to a spot close to Link (a bit around him, so he has to run off), landing after a fixed flight time
+    {
+        f32 angle = Rand_ZeroOne() * 2.0f * M_PI;
+        f32 off = 40.0f + Rand_ZeroOne() * 90.0f;
+        Vec3f spot;
+        f32 dist;
+
+        spot.x = player->actor.world.pos.x + sinf(angle) * off;
+        spot.y = player->actor.world.pos.y;
+        spot.z = player->actor.world.pos.z + cosf(angle) * off;
+        dist = Math_Vec3f_DistXZ(&this->actor.world.pos, &spot);
+        this->actor.world.rot.y = Math_Vec3f_Yaw(&this->actor.world.pos, &spot);
+        this->actor.speedXZ = CLAMP_MAX(dist / BOSSGOMA_HOP_FLIGHT_FRAMES, 30.0f);
+        this->actor.velocity.y = -this->actor.gravity * BOSSGOMA_HOP_FLIGHT_FRAMES * 0.5f;
+        this->actor.bgCheckFlags &= ~BGCHECKFLAG_GROUND;
+        sZopHopFloorY = this->actor.world.pos.y;
+        sZopHopAirborne = true;
+        Animation_Change(&this->skelanime, &gGohmaWalkAnim, 2.5f, 0.0f, Animation_GetLastFrame(&gGohmaWalkAnim),
+                         ANIMMODE_LOOP, -4.0f);
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_GOMA_HIGH);
+    }
+}
+
 static s32 BossGoma_LidsFollowAnim(BossGoma* this) {
     return this->actionFunc == BossGoma_Encounter || this->actionFunc == BossGoma_Defeated;
 }
@@ -1146,6 +1256,7 @@ void BossGoma_Init(Actor* thisx, PlayState* play) {
     sZopEyeCycleFromRoar = false;
     sZopEyeCycleOpenStart = 0;
     sZopBarrageCooldown = 0;
+    sZopHopCooldown = 200;
     sZopSlamIntoBarrage = false;
     sZopWaveAlpha = 0;
     sZopWaveCanHit = false;
@@ -2275,7 +2386,7 @@ void BossGoma_FallJump(BossGoma* this, PlayState* play) {
         this->actor.velocity.y = 0.0f;
         BossGoma_PlayEffectsAndSfx(this, play, 0, 8);
         Actor_RequestQuakeAndRumble(&this->actor, play, 5, 0xF);
-        if (sZopPhase2Announced) {
+        if (ZOP_DifficultyEnabled()) {
             BossGoma_SetupLandingWave();
             BossGoma_SpawnShockwave(this, this->actor.world.pos.y);
         }
@@ -2468,12 +2579,20 @@ void BossGoma_FloorMain(BossGoma* this, PlayState* play) {
         this->doNotMoveThisFrame = true;
     }
 
+    // Hop attack in phase 1 too (phase 2 tries it below, after the barrage)
+    if (!BossGoma_InPhase2(this) && BossGoma_TryHop(this, play)) {
+        return;
+    }
+
     // Phase 2: mixes it up between climbing to the ceiling (patience runs out) and shooting from the floor
     if (BossGoma_InPhase2(this)) {
         if (this->patienceTimer > 220) {
             this->patienceTimer = 220;
         }
         if (BossGoma_TryBarrage(this)) {
+            return;
+        }
+        if (BossGoma_TryHop(this, play)) {
             return;
         }
         if (sZopFloorShootCooldown > 0) {
@@ -2643,7 +2762,8 @@ void BossGoma_UpdateEye(BossGoma* this, PlayState* play) {
             (this->actionFunc == BossGoma_FloorMain || this->actionFunc == BossGoma_FloorIdle ||
              this->actionFunc == BossGoma_FloorAttackPosture || this->actionFunc == BossGoma_FloorPrepareAttack ||
              this->actionFunc == BossGoma_FloorAttack || this->actionFunc == BossGoma_FloorLand ||
-             this->actionFunc == BossGoma_Phase2FloorShoot || this->actionFunc == BossGoma_Phase2Barrage);
+             this->actionFunc == BossGoma_Phase2FloorShoot || this->actionFunc == BossGoma_Phase2Barrage ||
+             this->actionFunc == BossGoma_Hop);
 
         if (inCycle && !sZopEyeWasInCycle) {
             if (sZopEyeCycleOpenStart > 0) {
@@ -2930,7 +3050,8 @@ void BossGoma_Update(Actor* thisx, PlayState* play) {
 
     // Testing aid 2: Gohma stands in front of Link at half health and starts the phase 2 intro right away
     // Testing aid 3: the same, but she skips the intro and starts her barrage attack
-    if (ZOP_TestGohmaEye() == 2 || ZOP_TestGohmaEye() == 3) {
+    // Testing aid 4: the same, but she starts her hop attack
+    if (ZOP_TestGohmaEye() >= 2 && ZOP_TestGohmaEye() <= 4) {
         static u8 sZopFdTestStarted = false;
 
         if (this->actionFunc == BossGoma_Encounter || !sZopFdTestStarted) {
@@ -2949,6 +3070,11 @@ void BossGoma_Update(Actor* thisx, PlayState* play) {
             if (ZOP_TestGohmaEye() == 3) {
                 this->disableGameplayLogic = false;
                 BossGoma_SetupPhase2Signal(this);
+            } else if (ZOP_TestGohmaEye() == 4) {
+                this->disableGameplayLogic = false;
+                sZopHopCooldown = 0;
+                this->actor.bgCheckFlags |= BGCHECKFLAG_GROUND;
+                BossGoma_TryHop(this, play);
             } else {
                 BossGoma_SetupPhase2Slam(this);
             }
@@ -2984,6 +3110,9 @@ void BossGoma_Update(Actor* thisx, PlayState* play) {
 
     if (sZopPhase2Announced && !this->disableGameplayLogic && sZopBarrageCooldown > 0) {
         sZopBarrageCooldown--;
+    }
+    if (!this->disableGameplayLogic && sZopHopCooldown > 0 && this->actionFunc != BossGoma_Encounter) {
+        sZopHopCooldown--;
     }
 
     this->eyeState = EYESTATE_IRIS_FOLLOW_BONUS_IFRAMES;
