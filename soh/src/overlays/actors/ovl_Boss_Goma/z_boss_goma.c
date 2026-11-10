@@ -242,7 +242,10 @@ static void BossGoma_Phase2Slam(BossGoma* this, PlayState* play) {
                                                               this->actor.yawTowardsPlayer, 8.0f);
                     }
                 } else {
-                    Actor_SetPlayerKnockbackLargeNoDamage(play, &this->actor, 11.0f, this->actor.yawTowardsPlayer,
+                    // Phase 2 intro: the same shockwave opens some distance before the cutscene
+                    BossGoma_SpawnShockwave(this, this->actor.world.pos.y);
+                    Actor_SpawnFloorDustRing(play, &this->actor, &sZopWavePos, 200.0f, 20, 12.0f, 1000, 20, true);
+                    Actor_SetPlayerKnockbackLargeNoDamage(play, &this->actor, 13.0f, this->actor.yawTowardsPlayer,
                                                           6.0f);
                 }
                 this->actionState = 1;
@@ -256,6 +259,8 @@ static void BossGoma_Phase2Slam(BossGoma* this, PlayState* play) {
                     sZopSlamIntoBarrage = false;
                     this->disableGameplayLogic = false;
                     BossGoma_SetupPhase2Barrage(this);
+                } else if (ZOP_Phase2IntroStyle() == 1) {
+                    BossGoma_SetupPhase2FakeDeath(this, play);
                 } else {
                     BossGoma_SetupPhase2Roar(this, play);
                 }
@@ -469,10 +474,12 @@ static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
 
 // Phase 2 intro, alternative (gZOP.Difficulty.Phase2Intro = 1): she collapses as if beaten, the room goes quiet, then
 // her eye snaps open, Link startles, and she rises again (her death animation played backwards) and screams.
-#define BOSSGOMA_FD_EYE_SHOT 88
-#define BOSSGOMA_FD_EYE_OPEN 100
-#define BOSSGOMA_FD_LINK_SHOT 114
-#define BOSSGOMA_FD_RISE 126
+// Timing follows the length of her collapse: she lies still for 2 s before the eye opens
+static s16 sZopFdCollapseFrames;
+#define BOSSGOMA_FD_EYE_OPEN (sZopFdCollapseFrames + 40)
+#define BOSSGOMA_FD_EYE_SHOT (BOSSGOMA_FD_EYE_OPEN - 12)
+#define BOSSGOMA_FD_LINK_SHOT (BOSSGOMA_FD_EYE_OPEN + 14)
+#define BOSSGOMA_FD_RISE (BOSSGOMA_FD_LINK_SHOT + 12)
 #define BOSSGOMA_FD_RISE_SPEED 1.6f
 #define BOSSGOMA_FD_SCREAM_FRAMES 34
 static s16 sZopFdElapsed;
@@ -489,6 +496,7 @@ static void BossGoma_SetupPhase2FakeDeath(BossGoma* this, PlayState* play) {
     this->actor.speedXZ = 0.0f;
     sZopFdElapsed = 0;
     sZopFdRiseFrames = (s16)(Animation_GetLastFrame(&gGohmaDeathAnim) / BOSSGOMA_FD_RISE_SPEED) + 1;
+    sZopFdCollapseFrames = (s16)Animation_GetLastFrame(&gGohmaDeathAnim);
     ZOP_StopGohmaLasers(play);
 
     func_80064520(play, &play->csCtx);
@@ -515,7 +523,7 @@ static void BossGoma_Phase2FakeDeath(BossGoma* this, PlayState* play) {
 
     if (e < BOSSGOMA_FD_EYE_SHOT) {
         // Shot 1: from the side she slumps down; the eye slowly closes, then nothing moves
-        f32 dist = (e < 40) ? 300.0f : 300.0f - (e - 40) * 1.6f;
+        f32 dist = (e < 40) ? 300.0f : CLAMP_MIN(300.0f - (e - 40) * 1.2f, 190.0f);
 
         if (e == 18) {
             Actor_RequestQuakeAndRumble(&this->actor, play, 6, 10);
@@ -2706,11 +2714,7 @@ void BossGoma_UpdateHit(BossGoma* this, PlayState* play) {
 
                     if (!sZopPhase2Announced && BossGoma_InPhase2(this)) {
                         sZopPhase2Announced = true;
-                        if (ZOP_Phase2IntroStyle() == 1) {
-                            BossGoma_SetupPhase2FakeDeath(this, play);
-                        } else {
-                            BossGoma_SetupPhase2Slam(this);
-                        }
+                        BossGoma_SetupPhase2Slam(this);
                     } else {
                         BossGoma_SetupFloorDamaged(this);
                     }
@@ -2858,7 +2862,7 @@ void BossGoma_Update(Actor* thisx, PlayState* play) {
     BossGoma* this = (BossGoma*)thisx;
     s32 pad;
 
-    // Testing aid 2: Gohma stands in front of Link at half health and plays the fake death phase 2 intro right away
+    // Testing aid 2: Gohma stands in front of Link at half health and starts the phase 2 intro right away
     if (ZOP_TestGohmaEye() == 2) {
         static u8 sZopFdTestStarted = false;
 
@@ -2875,7 +2879,7 @@ void BossGoma_Update(Actor* thisx, PlayState* play) {
             this->actor.gravity = -2.0f;
             this->actor.colChkInfo.health = (u8)CLAMP_MIN(this->actor.colChkInfo.health / 2, 1);
             sZopPhase2Announced = true;
-            BossGoma_SetupPhase2FakeDeath(this, play);
+            BossGoma_SetupPhase2Slam(this);
         }
     } else if (ZOP_TestGohmaEye()) {
         if (this->actionFunc != BossGoma_ZopEyeTest) {
