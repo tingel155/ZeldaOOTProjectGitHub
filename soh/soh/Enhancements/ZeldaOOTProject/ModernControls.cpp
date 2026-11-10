@@ -10,7 +10,8 @@
 //   ComboWindow      game frames after a swing in which the next press still continues the combo (default 8)
 //   CameraSpeed      speed factor of the free camera on top of the menu sensitivity (default 1.5)
 //   CameraSmoothing  share of the stick input the free camera follows per frame, 1 = instant (default 0.55)
-//   TurnSpeed        factor on how fast Link turns while running and how fast his body follows (default 2.5)
+//   TurnSpeed        factor on how fast Link turns while running (free and locked on) and how fast his body follows
+//                    (default 2.5)
 //   Acceleration     factor on how fast Link speeds up when running off (default 1.5)
 //   QuickTurn        sharp turns spin Link around in a few frames instead of braking to a stop first (default 1)
 //   LockOnLeap       locked on, A with the stick forward only leaps toward the target; the sword button in the air
@@ -335,6 +336,13 @@ extern "C" int ZOP_LockOnLeap(void) {
 
 extern "C" float ZOP_LockOnLeapSpeed(void) {
     return CVarGetFloat(CVAR_ZOP_CONTROLS("LeapSpeed"), 8.0f);
+}
+
+extern "C" float ZOP_LockOnTurnStep(float vanillaStep) {
+    if (!ControlsEnabled()) {
+        return vanillaStep;
+    }
+    return vanillaStep * CVarGetFloat(CVAR_ZOP_CONTROLS("TurnSpeed"), 2.5f);
 }
 
 extern "C" int ZOP_PlayerQuickTurn(void) {

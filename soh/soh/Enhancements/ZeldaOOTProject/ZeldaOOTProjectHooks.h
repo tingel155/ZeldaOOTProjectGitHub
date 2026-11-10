@@ -66,6 +66,8 @@ int ZOP_SwordComboSwingEnded(struct PlayState* play);
 short ZOP_PlayerTurnRate(short vanillaRate);
 float ZOP_PlayerAccel(float vanillaAccel);
 int ZOP_PlayerQuickTurn(void);
+// z_player.c, locked-on movement: scales a turn step (binary angle) like ZOP_PlayerTurnRate
+float ZOP_LockOnTurnStep(float vanillaStep);
 
 // z_player.c, A while locked on with the stick forward/neutral: nonzero when Link only leaps toward the target
 // instead of doing the jump attack right away; the jump attack then comes from the sword button in the air

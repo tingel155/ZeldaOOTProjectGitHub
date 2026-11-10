@@ -8198,17 +8198,18 @@ void Player_Action_80840450(Player* this, PlayState* play) {
         temp3 = yawTarget - this->yaw;
         temp4 = ABS(temp3);
 
+        // ZeldaOOTProject: locked-on movement turns, stops and speeds up as snappily as free running
         if (temp4 > 0x4000) {
-            if (Math_StepToF(&this->linearVelocity, 0.0f, 1.5f)) {
+            if (Math_StepToF(&this->linearVelocity, 0.0f, ZOP_PlayerAccel(1.5f))) {
                 this->yaw = yawTarget;
             }
             return;
         }
 
-        Math_AsymStepToF(&this->linearVelocity, speedTarget * 0.3f, 2.0f, 1.5f);
+        Math_AsymStepToF(&this->linearVelocity, speedTarget * 0.3f, ZOP_PlayerAccel(2.0f), 1.5f);
 
         if (!(this->stateFlags3 & PLAYER_STATE3_FINISHED_ATTACKING)) {
-            Math_ScaledStepToS(&this->yaw, yawTarget, temp4 * 0.1f);
+            Math_ScaledStepToS(&this->yaw, yawTarget, ZOP_LockOnTurnStep(temp4 * 0.1f));
         }
     }
 }
@@ -8508,14 +8509,14 @@ void Player_Action_80840DE4(Player* this, PlayState* play) {
         temp3 = ABS(temp2);
 
         if (temp3 > 0x4000) {
-            if (Math_StepToF(&this->linearVelocity, 0.0f, 1.5f)) {
+            if (Math_StepToF(&this->linearVelocity, 0.0f, ZOP_PlayerAccel(1.5f))) {
                 this->yaw = yawTarget;
             }
             return;
         }
 
-        Math_AsymStepToF(&this->linearVelocity, speedTarget * 0.4f, 1.5f, 1.5f);
-        Math_ScaledStepToS(&this->yaw, yawTarget, temp3 * 0.1f);
+        Math_AsymStepToF(&this->linearVelocity, speedTarget * 0.4f, ZOP_PlayerAccel(1.5f), 1.5f);
+        Math_ScaledStepToS(&this->yaw, yawTarget, ZOP_LockOnTurnStep(temp3 * 0.1f));
     }
 }
 
@@ -8614,8 +8615,8 @@ void Player_Action_808414F8(Player* this, PlayState* play) {
         } else {
             s16 sp2A = yawTarget - this->yaw;
 
-            Math_AsymStepToF(&this->linearVelocity, speedTarget * 1.5f, 1.5f, 2.0f);
-            Math_ScaledStepToS(&this->yaw, yawTarget, sp2A * 0.1f);
+            Math_AsymStepToF(&this->linearVelocity, speedTarget * 1.5f, ZOP_PlayerAccel(1.5f), 2.0f);
+            Math_ScaledStepToS(&this->yaw, yawTarget, ZOP_LockOnTurnStep(sp2A * 0.1f));
 
             if ((speedTarget == 0.0f) && (this->linearVelocity == 0.0f)) {
                 func_80839F30(this, play);
@@ -8732,15 +8733,15 @@ void Player_Action_8084193C(Player* this, PlayState* play) {
         temp3 = ABS(temp2);
 
         if (temp3 > 0x4000) {
-            if (Math_StepToF(&this->linearVelocity, 0.0f, 3.0f) != 0) {
+            if (Math_StepToF(&this->linearVelocity, 0.0f, ZOP_PlayerAccel(3.0f)) != 0) {
                 this->yaw = yawTarget;
             }
             return;
         }
 
         speedTarget *= 0.9f;
-        Math_AsymStepToF(&this->linearVelocity, speedTarget, 2.0f, 3.0f);
-        Math_ScaledStepToS(&this->yaw, yawTarget, temp3 * 0.1f);
+        Math_AsymStepToF(&this->linearVelocity, speedTarget, ZOP_PlayerAccel(2.0f), 3.0f);
+        Math_ScaledStepToS(&this->yaw, yawTarget, ZOP_LockOnTurnStep(temp3 * 0.1f));
     }
 }
 
