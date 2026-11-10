@@ -98,9 +98,21 @@ static s16 sZopEyeClosedFrames; // how long the eye has been shut, so short blin
 static s16 sZopEyeOpenFrames;
 #define BOSSGOMA_SHOOT_DELAY_AFTER_OPEN 20
 
-// Phase 2: lid offsets for a wide open eye (the animations' own pose is half shut)
-#define BOSSGOMA_EYE_LID_BOTTOM_WIDE 0x380
-#define BOSSGOMA_EYE_LID_TOP_WIDE (-0x600)
+// Lid offsets for a wide open eye: in the stand pose the bottom lid covers half the eye (checked on screenshots)
+#define BOSSGOMA_EYE_LID_BOTTOM_WIDE 0x1400
+#define BOSSGOMA_EYE_LID_TOP_WIDE (-0x300)
+
+// Phase 2 floor cycle: entering it (after the ceiling, a stun...) starts with the eye shut, except right after the
+// intro cutscene, which ends on the eye opening
+static u8 sZopEyeWasInCycle;
+static u8 sZopEyeCycleFromRoar;
+
+// The animations move the eyelids on their own, so an "open" eye often looked half shut. Instead the lids always
+// start from their pose in the stand animation, plus eyeLidBottomRotX / eyeLidTopRotX.
+void SkelAnime_GetFrameData(AnimationHeader* animation, s32 frame, s32 limbCount, Vec3s* frameTable);
+static s16 sZopLidBaseBottom;
+static s16 sZopLidBaseTop;
+static u8 sZopLidBaseValid;
 
 // Flash of light on the eye when it opens (frames left)
 static s16 sZopEyeFlashTimer;
@@ -258,8 +270,8 @@ static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
                 Audio_PlayActorSound2(&this->actor, NA_SE_EV_DIAMOND_SWITCH);
                 sZopEyeFlashTimer = BOSSGOMA_EYE_FLASH_FRAMES;
             }
-            Math_ApproachS(&this->eyeLidBottomRotX, BOSSGOMA_EYE_LID_BOTTOM_WIDE, 1, 0x400);
-            Math_ApproachS(&this->eyeLidTopRotX, BOSSGOMA_EYE_LID_TOP_WIDE, 1, 0x700);
+            Math_ApproachS(&this->eyeLidBottomRotX, BOSSGOMA_EYE_LID_BOTTOM_WIDE, 1, 0x500);
+            Math_ApproachS(&this->eyeLidTopRotX, BOSSGOMA_EYE_LID_TOP_WIDE, 1, 0x400);
         }
 
         // In front of the eye, a little below it, slowly pushing in
@@ -330,6 +342,8 @@ static void BossGoma_Phase2Roar(BossGoma* this, PlayState* play) {
         this->disableGameplayLogic = false;
         this->invincibilityFrames = 10;
         sZopFloorShootCooldown = 60;
+
+        sZopEyeCycleFromRoar = true;
 
         // Out of patience: she backs off, climbs the nearest wall and starts shooting
         BossGoma_SetupFloorMain(this);
@@ -655,6 +669,17 @@ void BossGoma_Init(Actor* thisx, PlayState* play) {
     Actor_ProcessInitChain(&this->actor, sInitChain);
     ActorShape_Init(&this->actor.shape, 4000.0f, ActorShadow_DrawCircle, 150.0f);
     SkelAnime_Init(play, &this->skelanime, &gGohmaSkel, &gGohmaIdleCrouchedAnim, NULL, NULL, 0);
+    {
+        Vec3s standPose[BOSSGOMA_LIMB_MAX];
+
+        sZopLidBaseValid = false;
+        if (this->skelanime.limbCount <= BOSSGOMA_LIMB_MAX) {
+            SkelAnime_GetFrameData(&gGohmaStandAnim, 0, this->skelanime.limbCount, standPose);
+            sZopLidBaseBottom = standPose[BOSSGOMA_LIMB_EYE_LID_BOTTOM_ROOT2].x;
+            sZopLidBaseTop = standPose[BOSSGOMA_LIMB_EYE_LID_TOP_ROOT2].x;
+            sZopLidBaseValid = true;
+        }
+    }
     Animation_PlayLoop(&this->skelanime, &gGohmaIdleCrouchedAnim);
     this->actor.shape.rot.x = -0x8000; // upside-down
     this->eyeIrisScaleX = 1.0f;
@@ -682,6 +707,8 @@ void BossGoma_Init(Actor* thisx, PlayState* play) {
     sZopEyeClosedFrames = 0;
     sZopEyeFlashTimer = 0;
     sZopEyeOpenFrames = 0;
+    sZopEyeWasInCycle = false;
+    sZopEyeCycleFromRoar = false;
     // Undo a recolor left over from an earlier fight; the texture cache is flushed on the next draw
     ZOP_GohmaSetRecolor(0.0f);
     sZopRecolorDirty = true;
@@ -2148,17 +2175,33 @@ void BossGoma_UpdateEye(BossGoma* this, PlayState* play) {
         // Phase 2: eye shut on the way up and while shooting from the ceiling, so she can't simply be shot down
         if (BossGoma_InPhase2(this) &&
             (this->actionFunc == BossGoma_WallClimb || this->actionFunc == BossGoma_CeilingMoveToCenter ||
-             this->actionFunc == BossGoma_CeilingIdle || this->actionFunc == BossGoma_CeilingPrepareSpawnGohmas)) {
+             this->actionFunc == BossGoma_CeilingIdle || this->actionFunc == BossGoma_CeilingPrepareSpawnGohmas ||
+             this->actionFunc == BossGoma_FallJump)) {
             this->eyeClosedTimer = 7;
         }
 
         // Phase 2 on the floor: the eye alternates between briefly open and shut (about 2.5-4 s). Not while
         // she lies stunned, so a successful stun can always be followed up.
-        if (BossGoma_InPhase2(this) && sZopPhase2Announced &&
+        s32 inCycle =
+            BossGoma_InPhase2(this) && sZopPhase2Announced &&
             (this->actionFunc == BossGoma_FloorMain || this->actionFunc == BossGoma_FloorIdle ||
              this->actionFunc == BossGoma_FloorAttackPosture || this->actionFunc == BossGoma_FloorPrepareAttack ||
              this->actionFunc == BossGoma_FloorAttack || this->actionFunc == BossGoma_FloorLand ||
-             this->actionFunc == BossGoma_Phase2FloorShoot)) {
+             this->actionFunc == BossGoma_Phase2FloorShoot);
+
+        if (inCycle && !sZopEyeWasInCycle) {
+            if (sZopEyeCycleFromRoar) {
+                sZopEyeCycleClosed = false;
+                sZopEyeCycleTimer = 24;
+            } else {
+                sZopEyeCycleClosed = true;
+                sZopEyeCycleTimer = Rand_S16Offset(50, 30);
+            }
+            sZopEyeCycleFromRoar = false;
+        }
+        sZopEyeWasInCycle = inCycle;
+
+        if (inCycle) {
             if (sZopEyeCycleTimer > 0) {
                 sZopEyeCycleTimer--;
             } else {
@@ -2188,7 +2231,7 @@ void BossGoma_UpdateEye(BossGoma* this, PlayState* play) {
             }
             sZopEyeOpenFrames = 0;
             // close eye
-            Math_ApproachS(&this->eyeLidBottomRotX, -0xA98, 1, 0x7D0);
+            Math_ApproachS(&this->eyeLidBottomRotX, -0xA98, 1, 0xC00);
             Math_ApproachS(&this->eyeLidTopRotX, 0x1600, 1, 0x7D0);
         } else {
             // Phase 2: a crystal switch chime tells that the eye is open (and hittable) again
@@ -2201,9 +2244,9 @@ void BossGoma_UpdateEye(BossGoma* this, PlayState* play) {
             if (sZopEyeOpenFrames < 0x7FFF) {
                 sZopEyeOpenFrames++;
             }
-            // open eye (phase 2: wide open, so an open eye is unmistakable)
-            Math_ApproachS(&this->eyeLidBottomRotX, sZopPhase2Announced ? BOSSGOMA_EYE_LID_BOTTOM_WIDE : 0, 1, 0x7D0);
-            Math_ApproachS(&this->eyeLidTopRotX, sZopPhase2Announced ? BOSSGOMA_EYE_LID_TOP_WIDE : 0, 1, 0x7D0);
+            // open eye, wide open so an open eye is unmistakable
+            Math_ApproachS(&this->eyeLidBottomRotX, BOSSGOMA_EYE_LID_BOTTOM_WIDE, 1, 0xC00);
+            Math_ApproachS(&this->eyeLidTopRotX, BOSSGOMA_EYE_LID_TOP_WIDE, 1, 0x7D0);
         }
 
         if (this->eyeState != EYESTATE_IRIS_NO_FOLLOW_NO_IFRAMES) {
@@ -2376,9 +2419,54 @@ static void BossGoma_SetTouch(BossGoma* this, s32 element, s32 on) {
     }
 }
 
+// Testing aid (gZOP.TestEnv.GohmaEyeTest): Gohma stands in front of Link in her stand pose; every 5 s the eyelids
+// switch to the next pose of the table (offsets added to the animation, bottom / top)
+static const s16 sZopEyeTestPoses[][2] = {
+    { 0, 0 }, { -0xA98, 0x1600 }, { BOSSGOMA_EYE_LID_BOTTOM_WIDE, BOSSGOMA_EYE_LID_TOP_WIDE },
+};
+static s16 sZopEyeTestFrames;
+
+static void BossGoma_ZopEyeTest(BossGoma* this, PlayState* play) {
+    Player* player = GET_PLAYER(play);
+    s32 pose = (sZopEyeTestFrames++ / 120) % ARRAY_COUNT(sZopEyeTestPoses);
+
+    if (sZopEyeTestFrames % 120 == 1) {
+        osSyncPrintf("ZOP eye test pose %d\n", pose);
+    }
+    SkelAnime_Update(&this->skelanime);
+    this->actor.world.pos.x = player->actor.world.pos.x + Math_SinS(player->actor.shape.rot.y) * 280.0f;
+    this->actor.world.pos.z = player->actor.world.pos.z + Math_CosS(player->actor.shape.rot.y) * 280.0f;
+    this->actor.world.pos.y = player->actor.world.pos.y + 45.0f;
+    this->actor.shape.rot.x = 0;
+    this->actor.shape.rot.y = this->actor.world.rot.y =
+        Math_Vec3f_Yaw(&this->actor.world.pos, &Play_GetCamera(play, 0)->eye);
+    this->actor.speedXZ = 0.0f;
+    this->actor.velocity.y = 0.0f;
+    this->actor.gravity = 0.0f;
+    this->eyeLidBottomRotX = sZopEyeTestPoses[pose][0];
+    this->eyeLidTopRotX = sZopEyeTestPoses[pose][1];
+    this->eyeIrisRotX = this->eyeIrisRotY = 0;
+    // Pose 0 is marked by a big iris, so the order can be told apart on screenshots
+    this->eyeIrisScaleX = this->eyeIrisScaleY = (pose == 0) ? 1.7f : 1.0f;
+    this->eyeState = EYESTATE_IRIS_FOLLOW_NO_IFRAMES;
+}
+
 void BossGoma_Update(Actor* thisx, PlayState* play) {
     BossGoma* this = (BossGoma*)thisx;
     s32 pad;
+
+    if (ZOP_TestGohmaEye()) {
+        if (this->actionFunc != BossGoma_ZopEyeTest) {
+            Animation_Change(&this->skelanime, &gGohmaStandAnim, 1.0f, 0.0f, Animation_GetLastFrame(&gGohmaStandAnim),
+                             ANIMMODE_LOOP, 0.0f);
+            this->actionFunc = BossGoma_ZopEyeTest;
+            this->disableGameplayLogic = true;
+            this->visualState = VISUALSTATE_DEFAULT;
+            sZopEyeTestFrames = 0;
+        }
+        this->actionFunc(this, play);
+        return;
+    }
 
     this->visualState = VISUALSTATE_DEFAULT;
     this->frameCount++;
@@ -2470,11 +2558,11 @@ s32 BossGoma_OverrideLimbDraw(PlayState* play, s32 limbIndex, Gfx** dList, Vec3f
             break;
 
         case BOSSGOMA_LIMB_EYE_LID_BOTTOM_ROOT2:
-            rot->x += this->eyeLidBottomRotX;
+            rot->x = (sZopLidBaseValid ? sZopLidBaseBottom : rot->x) + this->eyeLidBottomRotX;
             break;
 
         case BOSSGOMA_LIMB_EYE_LID_TOP_ROOT2:
-            rot->x += this->eyeLidTopRotX;
+            rot->x = (sZopLidBaseValid ? sZopLidBaseTop : rot->x) + this->eyeLidTopRotX;
             break;
 
         case BOSSGOMA_LIMB_IRIS_ROOT2:

@@ -76,6 +76,8 @@ void ZOP_SmoothFreeLook(float* camX, float* camY, int frame);
 
 // Testing aid: bosses skip straight to their phase 2 intro after the encounter cutscene (Difficulty.cpp)
 int ZOP_TestPhase2Intro(void);
+// Testing aid: Gohma stands in front of Link and cycles through eyelid poses
+int ZOP_TestGohmaEye(void);
 
 #ifdef __cplusplus
 }
