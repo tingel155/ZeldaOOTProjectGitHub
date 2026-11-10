@@ -150,9 +150,9 @@ static s16 sZopWaveDamage = 0;
 
 // Phase 2: small shockwave when she drops from the ceiling; it hurts, so standing right under her doesn't pay off
 static void BossGoma_SetupLandingWave(void) {
-    sZopWaveMaxScale = 1.3f;
+    sZopWaveMaxScale = 0.75f;
     sZopWaveInner = 0.0f;
-    sZopWaveRadius = 330.0f;
+    sZopWaveRadius = 200.0f;
     sZopWaveDamage = 16;
     sZopWaveCanHit = true;
 }
