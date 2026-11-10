@@ -61,7 +61,7 @@ void BossGoma_SpawnChildGohma(BossGoma* this, PlayState* play, s16 i);
 // ZeldaOOTProject: second phase once Gohma is down to half her health (gZOP.Difficulty.Phase2At). She retreats to the ceiling more often and,
 // instead of laying eggs, broods there and fires volleys of homing pearl arrows.
 #define BOSSGOMA_PHASE2_VOLLEY_FRAMES 110
-#define BOSSGOMA_PHASE2_ROAR_FRAMES 140
+#define BOSSGOMA_PHASE2_ROAR_FRAMES (BOSSGOMA_PHASE2_LINK_SHOT_FRAME + 12) // ends right after Link's startle
 // Roar cutscene: orbit around Gohma, then a close-up of her eye opening, then a shot on Link
 #define BOSSGOMA_PHASE2_EYE_SHOT_FRAME 70
 #define BOSSGOMA_PHASE2_EYE_OPEN_FRAME 84
