@@ -17,10 +17,6 @@
 //                    makes it the jump attack (default 1)
 //   LeapSpeed        forward speed of that leap (default 8)
 //   LockOnFraming    the lock-on camera pulls back and widens for bosses and high targets (default 1)
-//   DirectionalRoll  A while moving (not locked on) rolls straight in the stick direction (default 1)
-//   RollIFrames      frames a roll can't be hurt (default 10, 0 = off)
-//   AnalogDodge      locked-on hops and flips go exactly where the stick points (default 1)
-//   AirControl       steer in the air almost like on the ground (default 1)
 //   CameraCurve      0..1, how much small stick deflections are slowed down for fine aiming (default 0.5)
 //   PresetVersion    last applied version of the settings preset; the preset is applied once per version, so
 //                    later changes in the menus are kept
@@ -230,22 +226,6 @@ void ZOP_RegisterModernControls() {
             player->stateFlags2 |= PLAYER_STATE2_NAVI_ACTIVE;
         }
     });
-}
-
-extern "C" int ZOP_DirectionalRoll(void) {
-    return ControlsEnabled() && CVarGetInteger(CVAR_ZOP_CONTROLS("DirectionalRoll"), 1);
-}
-
-extern "C" int ZOP_RollIFrames(void) {
-    return ControlsEnabled() ? CVarGetInteger(CVAR_ZOP_CONTROLS("RollIFrames"), 10) : 0;
-}
-
-extern "C" int ZOP_AnalogDodge(void) {
-    return ControlsEnabled() && CVarGetInteger(CVAR_ZOP_CONTROLS("AnalogDodge"), 1);
-}
-
-extern "C" int ZOP_AirControl(void) {
-    return ControlsEnabled() && CVarGetInteger(CVAR_ZOP_CONTROLS("AirControl"), 1);
 }
 
 extern "C" int ZOP_KeepNaviOut(void) {
