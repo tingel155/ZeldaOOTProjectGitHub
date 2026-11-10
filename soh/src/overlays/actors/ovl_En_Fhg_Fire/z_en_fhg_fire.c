@@ -32,10 +32,15 @@
 #define ZOP_ARC_PREV_Y fwork[13]
 #define ZOP_ARC_PREV_SIDE fwork[14]
 #define ZOP_ARC_PERP_YAW fwork[FHGFIRE_WARP_TEX_1_X]
+#define ZOP_ARC_TARGET_X fwork[FHGFIRE_WARP_TEX_1_Y]
+#define ZOP_ARC_TARGET_Y fwork[FHGFIRE_WARP_TEX_2_X]
+#define ZOP_ARC_TARGET_Z fwork[FHGFIRE_WARP_TEX_2_Y]
+#define ZOP_ARC_FLAT_END 0.8f // the last 20% of the way are straight, so the ball comes in where it is aimed
 
 /**
- * ZeldaOOTProject: one more hit in a rally. A clang that rises in pitch with every hit, the room lights up a bit more,
- * and the flight to (tx, ty, tz) gets a curve: straight at first, then ever higher arcs and sideways swings.
+ * ZeldaOOTProject: one more hit in a rally. The Mirror Shield charge sound (Twinrova fight), rising in level and pitch
+ * with every hit, the room lights up a bit more, and the flight to (tx, ty, tz) gets a curve: straight at first, then
+ * ever higher arcs and sideways swings.
  */
 static void EnFhgFire_ZopRallyHit(EnFhgFire* this, f32 tx, f32 ty, f32 tz) {
     static f32 sFreq;
@@ -46,15 +51,21 @@ static void EnFhgFire_ZopRallyHit(EnFhgFire* this, f32 tx, f32 ty, f32 tz) {
     f32 dy = ty - this->actor.world.pos.y;
     f32 dz = tz - this->actor.world.pos.z;
 
-    sFreq = CLAMP_MAX(0.85f + hits * 0.07f, 2.2f);
-    Audio_PlaySfxGeneral(NA_SE_IT_SHIELD_REFLECT_SW, &this->actor.projectedPos, 4, &sFreq, &sVolume, &sReverb);
+    sFreq = CLAMP_MAX(0.9f + hits * 0.05f, 1.8f);
+    Audio_PlaySfxGeneral((hits <= 5)    ? (NA_SE_IT_SHIELD_CHARGE_LV1 & ~SFX_FLAG)
+                         : (hits <= 10) ? (NA_SE_IT_SHIELD_CHARGE_LV2 & ~SFX_FLAG)
+                                        : (NA_SE_IT_SHIELD_CHARGE_LV3 & ~SFX_FLAG),
+                         &this->actor.projectedPos, 4, &sFreq, &sVolume, &sReverb);
     ZOP_GndRallyGlow(hits);
 
     this->ZOP_ARC_TOTAL = sqrtf(SQ(dx) + SQ(dy) + SQ(dz));
     this->ZOP_ARC_TRAVELED = 0.0f;
     this->ZOP_ARC_PREV_Y = 0.0f;
     this->ZOP_ARC_PREV_SIDE = 0.0f;
-    this->ZOP_ARC_HEIGHT = (hits >= 3) ? CLAMP_MAX(hits - 2, 14) * 16.0f : 0.0f;
+    this->ZOP_ARC_TARGET_X = tx;
+    this->ZOP_ARC_TARGET_Y = ty;
+    this->ZOP_ARC_TARGET_Z = tz;
+    this->ZOP_ARC_HEIGHT = (hits >= 3) ? CLAMP_MAX(hits - 2, 10) * 16.0f : 0.0f;
     this->ZOP_ARC_SIDE =
         (hits >= 6) ? ((Rand_ZeroOne() < 0.5f) ? -1.0f : 1.0f) * CLAMP_MAX(hits - 5, 10) * 11.0f : 0.0f;
     this->ZOP_ARC_PERP_YAW = (f32)(s16)(Math_FAtan2F(dx, dz) * (0x8000 / M_PI) + 0x4000);
@@ -70,11 +81,26 @@ static void EnFhgFire_ZopRallyArc(EnFhgFire* this) {
     if (this->ZOP_ARC_TOTAL <= 0.0f) {
         return;
     }
-    this->ZOP_ARC_TRAVELED += this->actor.speedXZ;
-    p = CLAMP(this->ZOP_ARC_TRAVELED / this->ZOP_ARC_TOTAL, 0.0f, 1.0f);
-    y = this->ZOP_ARC_HEIGHT * sinf(p * M_PI);
-    side = this->ZOP_ARC_SIDE * sinf(p * M_PI);
     perp = (s16)this->ZOP_ARC_PERP_YAW;
+    // Progress from the real distance left to the target, measured on the straight path (without the curve offset)
+    {
+        f32 bx = this->actor.world.pos.x - Math_SinS(perp) * this->ZOP_ARC_PREV_SIDE;
+        f32 by = this->actor.world.pos.y - this->ZOP_ARC_PREV_Y;
+        f32 bz = this->actor.world.pos.z - Math_CosS(perp) * this->ZOP_ARC_PREV_SIDE;
+        f32 left = sqrtf(SQ(this->ZOP_ARC_TARGET_X - bx) + SQ(this->ZOP_ARC_TARGET_Y - by) +
+                         SQ(this->ZOP_ARC_TARGET_Z - bz));
+
+        p = CLAMP(1.0f - left / this->ZOP_ARC_TOTAL, 0.0f, 1.0f);
+        // never back (after passing the target the distance grows again)
+        p = MAX(p, this->ZOP_ARC_TRAVELED);
+        this->ZOP_ARC_TRAVELED = p;
+    }
+    {
+        f32 curve = CLAMP_MAX(p / ZOP_ARC_FLAT_END, 1.0f);
+
+        y = this->ZOP_ARC_HEIGHT * sinf(curve * M_PI);
+        side = this->ZOP_ARC_SIDE * sinf(curve * M_PI);
+    }
     this->actor.world.pos.y += y - this->ZOP_ARC_PREV_Y;
     this->actor.world.pos.x += Math_SinS(perp) * (side - this->ZOP_ARC_PREV_SIDE);
     this->actor.world.pos.z += Math_CosS(perp) * (side - this->ZOP_ARC_PREV_SIDE);
