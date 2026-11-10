@@ -14,6 +14,7 @@
 #include "soh/Enhancements/game-interactor/GameInteractor.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/Enhancements/nametag.h"
+#include "soh/Enhancements/ZeldaOOTProject/ZeldaOOTProjectHooks.h"
 
 #include "soh/ActorDB.h"
 #include "soh/OTRGlobals.h"
@@ -544,16 +545,41 @@ void Attention_Draw(TargetContext* targetCtx, PlayState* play) {
         FrameInterpolation_RecordOpenChild(actor, 1);
         NaviColor* naviColor = &sNaviColorList[actor->category];
 
-        POLY_XLU_DISP = Gfx_SetupDL(POLY_XLU_DISP, 0x7);
+        if (ZOP_BlueTargetMarker()) {
+            // ZeldaOOTProject: a small, softly pulsing blue glint instead of the arrow (ModernControls.cpp)
+            f32 t = play->gameplayFrames * 0.15f;
+            f32 pulse = 0.75f + 0.25f * sinf(t);
+            s32 i;
 
-        Matrix_Translate(actor->focus.pos.x, actor->focus.pos.y + (actor->targetArrowOffset * actor->scale.y) + 17.0f,
-                         actor->focus.pos.z, MTXMODE_NEW);
-        Matrix_RotateY((f32)((u16)(play->gameplayFrames * 3000)) * (M_PI / 0x8000), MTXMODE_APPLY);
-        Matrix_Scale((iREG(27) + 35) / 1000.0f, (iREG(28) + 60) / 1000.0f, (iREG(29) + 50) / 1000.0f, MTXMODE_APPLY);
+            Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+            gDPSetEnvColor(POLY_XLU_DISP++, 90, 160, 255, 255);
+            for (i = 0; i < 2; i++) {
+                f32 scale = (i == 0) ? 0.022f * pulse : 0.009f;
 
-        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, naviColor->inner.r, naviColor->inner.g, naviColor->inner.b, 255);
-        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
-        gSPDisplayList(POLY_XLU_DISP++, gZTargetArrowDL);
+                gDPSetPrimColor(POLY_XLU_DISP++, 0, 0x80, 220, 240, 255, (i == 0) ? 115 : 215);
+                Matrix_Translate(actor->focus.pos.x,
+                                 actor->focus.pos.y + (actor->targetArrowOffset * actor->scale.y) + 17.0f +
+                                     4.0f * sinf(t * 0.5f),
+                                 actor->focus.pos.z, MTXMODE_NEW);
+                Matrix_Mult(&play->billboardMtxF, MTXMODE_APPLY);
+                Matrix_Scale(scale, scale, 1.0f, MTXMODE_APPLY);
+                gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+                gSPDisplayList(POLY_XLU_DISP++, gEffFlash1DL);
+            }
+        } else {
+            POLY_XLU_DISP = Gfx_SetupDL(POLY_XLU_DISP, 0x7);
+
+            Matrix_Translate(actor->focus.pos.x,
+                             actor->focus.pos.y + (actor->targetArrowOffset * actor->scale.y) + 17.0f,
+                             actor->focus.pos.z, MTXMODE_NEW);
+            Matrix_RotateY((f32)((u16)(play->gameplayFrames * 3000)) * (M_PI / 0x8000), MTXMODE_APPLY);
+            Matrix_Scale((iREG(27) + 35) / 1000.0f, (iREG(28) + 60) / 1000.0f, (iREG(29) + 50) / 1000.0f,
+                         MTXMODE_APPLY);
+
+            gDPSetPrimColor(POLY_XLU_DISP++, 0, 0, naviColor->inner.r, naviColor->inner.g, naviColor->inner.b, 255);
+            gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_MODELVIEW | G_MTX_LOAD);
+            gSPDisplayList(POLY_XLU_DISP++, gZTargetArrowDL);
+        }
         FrameInterpolation_RecordCloseChild();
     }
 

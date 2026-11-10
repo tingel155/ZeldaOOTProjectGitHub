@@ -17,6 +17,9 @@
 //                    makes it the jump attack (default 1)
 //   LeapSpeed        forward speed of that leap (default 8)
 //   LockOnFraming    the lock-on camera pulls back and widens for bosses and high targets (default 1)
+//   LockOnDodge      locked on, A hops exactly where the stick points and B (C-Down) rolls there (default 1)
+//   BlueTargetMarker the arrow above a targeted actor is a small pulsing blue glint (default 1)
+//   DodgeIFrames     frames those hops and every roll can't be hurt (default 8, 0 = off)
 //   CameraCurve      0..1, how much small stick deflections are slowed down for fine aiming (default 0.5)
 //   PresetVersion    last applied version of the settings preset; the preset is applied once per version, so
 //                    later changes in the menus are kept
@@ -226,6 +229,18 @@ void ZOP_RegisterModernControls() {
             player->stateFlags2 |= PLAYER_STATE2_NAVI_ACTIVE;
         }
     });
+}
+
+extern "C" int ZOP_LockOnDodge(void) {
+    return ControlsEnabled() && CVarGetInteger(CVAR_ZOP_CONTROLS("LockOnDodge"), 1);
+}
+
+extern "C" int ZOP_DodgeIFrames(void) {
+    return ControlsEnabled() ? CVarGetInteger(CVAR_ZOP_CONTROLS("DodgeIFrames"), 8) : 0;
+}
+
+extern "C" int ZOP_BlueTargetMarker(void) {
+    return ControlsEnabled() && CVarGetInteger(CVAR_ZOP_CONTROLS("BlueTargetMarker"), 1);
 }
 
 extern "C" int ZOP_KeepNaviOut(void) {

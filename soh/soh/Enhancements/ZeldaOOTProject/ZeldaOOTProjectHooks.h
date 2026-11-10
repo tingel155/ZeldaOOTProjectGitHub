@@ -77,9 +77,13 @@ float ZOP_LockOnLeapSpeed(void);
 // Actor*); playerPos is a Vec3f* (ModernControls.cpp)
 void ZOP_LockOnFraming(void* target, void* playerPos, float playerHeight, float* distance, float* fov);
 
-// z_camera.c, Camera_Free: soft targeting turns the free camera toward the boss (camX/camY are play->camX/camY, the
-// stick deltas of this frame tell whether the player is turning the camera himself) (SoftTargeting.cpp)
-void ZOP_SoftTargetSteerCamera(float* camX, float* camY, float inputX, float inputY);
+// z_player.c, locked-on dodging (ModernControls.cpp): A hops exactly where the stick points, B (C-Down) rolls there;
+// both, and every roll, are invulnerable for ZOP_DodgeIFrames() frames
+int ZOP_LockOnDodge(void);
+int ZOP_DodgeIFrames(void);
+
+// z_actor.c, Attention_Draw: the arrow above the targeted actor becomes a small blue glint (ModernControls.cpp)
+int ZOP_BlueTargetMarker(void);
 
 // z_camera.c, Camera_Free: softens the right-stick camera input (yaw/pitch deltas of this frame)
 void ZOP_SmoothFreeLook(float* camX, float* camY, int frame);
