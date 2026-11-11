@@ -1055,25 +1055,141 @@ static void BossGanondrof_ZopChargeFlash(BossGanondrof* this, PlayState* play) {
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_LAUGH);
 }
 
-// ZeldaOOTProject: the end of a charge: he slams lightning into the floor, a damaging burst and shocks over the floor
-// fanned out toward Link
+// ZeldaOOTProject: glowing rifts racing over the floor from (x, z) (the ones of the Gohma fight), one per yaw
+static void BossGanondrof_ZopFloorLanes(BossGanondrof* this, PlayState* play, f32 x, f32 y, f32 z, s16 yaw,
+                                        s16 count) {
+    EnfHG* horse = (EnfHG*)this->actor.child;
+
+    ZOP_SpawnGohmaFloorLanes(play, &this->actor, x, y, z, yaw, count);
+    this->actor.child = &horse->actor; // spawning them as children must not lose the horse
+}
+
+// ZeldaOOTProject: the end of a charge: he slams lightning into the floor, a damaging burst and glowing rifts over the
+// floor fanned out toward Link
 static void BossGanondrof_ZopChargeImpact(BossGanondrof* this, PlayState* play) {
-    static const s16 sShockFan[] = { 0, -0x1000, 0x1000, -0x2400, 0x2400 };
     Player* player = GET_PLAYER(play);
     f32 groundY = player->actor.world.pos.y;
     s16 yawToLink = Math_Vec3f_Yaw(&this->actor.world.pos, &player->actor.world.pos);
-    s16 i;
 
     Actor_Spawn(&play->actorCtx, play, ACTOR_EN_FHG_FIRE, this->actor.world.pos.x, groundY + 20.0f,
                 this->actor.world.pos.z, 400, 0, 0, FHGFIRE_LIGHTNING_BURST);
-    for (i = 0; i < ARRAY_COUNT(sShockFan); i++) {
-        Actor_Spawn(&play->actorCtx, play, ACTOR_EN_FHG_FIRE, this->actor.world.pos.x, groundY + 20.0f,
-                    this->actor.world.pos.z, 0, yawToLink + sShockFan[i], 0, FHGFIRE_LIGHTNING_SHOCK);
-    }
+    BossGanondrof_ZopFloorLanes(this, play, this->actor.world.pos.x, groundY, this->actor.world.pos.z, yawToLink, 3);
     ZOP_GndRallyFlash(1.6f);
     Actor_RequestQuakeAndRumble(&this->actor, play, 5, 12);
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_HIT_THUNDER);
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_THUNDER_GND);
+}
+
+// ---------- ZeldaOOTProject: finale of the charge series. He flies to the middle of the room, raises his staff, rams it
+// into the floor, and glowing rifts race out in all directions, in two waves
+typedef enum {
+    ZOP_FINALE_FLY,
+    ZOP_FINALE_RAISE,
+    ZOP_FINALE_SLAM,
+    ZOP_FINALE_WAVE2,
+    ZOP_FINALE_RECOVER
+} ZopFinaleState;
+
+#define ZOP_FINALE_LANES 12
+
+static s16 sZopFinaleState;
+static s16 sZopFinaleTimer;
+static f32 sZopFinaleGroundY;
+
+static void BossGanondrof_ZopFinale(BossGanondrof* this, PlayState* play);
+
+static void BossGanondrof_ZopSetupFinale(BossGanondrof* this, PlayState* play) {
+    Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonNeutralAnim, -6.0f);
+    this->actionFunc = BossGanondrof_ZopFinale;
+    this->actor.speedXZ = 0.0f;
+    this->actor.velocity.x = this->actor.velocity.y = this->actor.velocity.z = 0.0f;
+    this->actor.gravity = 0.0f;
+    sZopFinaleState = ZOP_FINALE_FLY;
+    sZopFinaleTimer = 50; // fallback
+    sZopFinaleGroundY = GET_PLAYER(play)->actor.world.pos.y;
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_LAUGH);
+}
+
+static void BossGanondrof_ZopFinaleWave(BossGanondrof* this, PlayState* play, s16 offset) {
+    s16 i;
+
+    for (i = 0; i < ZOP_FINALE_LANES; i++) {
+        BossGanondrof_ZopFloorLanes(this, play, GND_BOSSROOM_CENTER_X, sZopFinaleGroundY, GND_BOSSROOM_CENTER_Z,
+                                    i * (0x10000 / ZOP_FINALE_LANES) + offset, 1);
+    }
+}
+
+static void BossGanondrof_ZopFinale(BossGanondrof* this, PlayState* play) {
+    Actor* thisx = &this->actor;
+
+    SkelAnime_Update(&this->skelAnime);
+    Math_ApproachS(&thisx->shape.rot.y, thisx->yawTowardsPlayer, 5, 0x7D0);
+    if (sZopFinaleTimer > 0) {
+        sZopFinaleTimer--;
+    }
+
+    switch (sZopFinaleState) {
+        case ZOP_FINALE_FLY: {
+            f32 dx = GND_BOSSROOM_CENTER_X - thisx->world.pos.x;
+            f32 dz = GND_BOSSROOM_CENTER_Z - thisx->world.pos.z;
+
+            Math_ApproachF(&thisx->world.pos.x, GND_BOSSROOM_CENTER_X, 0.2f, 22.0f);
+            Math_ApproachF(&thisx->world.pos.z, GND_BOSSROOM_CENTER_Z, 0.2f, 22.0f);
+            Math_ApproachF(&thisx->world.pos.y, sZopFinaleGroundY + 170.0f, 0.2f, 12.0f);
+            if (((SQ(dx) + SQ(dz)) < SQ(15.0f)) || (sZopFinaleTimer == 0)) {
+                sZopFinaleState = ZOP_FINALE_RAISE;
+                sZopFinaleTimer = 16;
+                Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonChargeWindupAnim, -3.0f);
+                BossGanondrof_ZopChargeFlash(this, play);
+            }
+            break;
+        }
+        case ZOP_FINALE_RAISE:
+            thisx->world.pos.y += 2.0f * Math_SinS(this->work[GND_VARIANCE_TIMER] * 1500);
+            if (sZopFinaleTimer == 0) {
+                sZopFinaleState = ZOP_FINALE_SLAM;
+                sZopFinaleTimer = 6;
+                Animation_MorphToPlayOnce(&this->skelAnime, &gPhantomGanonChargeStartAnim, 0.0f);
+                Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_ATTACK);
+            }
+            break;
+        case ZOP_FINALE_SLAM:
+            // down he goes, staff first
+            Math_ApproachF(&thisx->world.pos.y, sZopFinaleGroundY + 50.0f, 0.6f, 35.0f);
+            if (sZopFinaleTimer == 0) {
+                Actor_Spawn(&play->actorCtx, play, ACTOR_EN_FHG_FIRE, GND_BOSSROOM_CENTER_X, sZopFinaleGroundY + 20.0f,
+                            GND_BOSSROOM_CENTER_Z, 500, 0, 0, FHGFIRE_LIGHTNING_BURST);
+                BossGanondrof_ZopFinaleWave(this, play, (s16)Rand_CenteredFloat(0x800));
+                this->shockTimer = 20;
+                ZOP_GndRallyFlash(2.0f);
+                Actor_RequestQuakeAndRumble(thisx, play, 8, 15);
+                Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_HIT_THUNDER);
+                Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_THUNDER_GND);
+                Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_THUNDER);
+                sZopFinaleState = ZOP_FINALE_WAVE2;
+                sZopFinaleTimer = 22;
+            }
+            break;
+        case ZOP_FINALE_WAVE2:
+            // a second wave, in the gaps of the first
+            if (sZopFinaleTimer == 0) {
+                BossGanondrof_ZopFinaleWave(this, play, 0x10000 / (ZOP_FINALE_LANES * 2));
+                ZOP_GndRallyFlash(0.9f);
+                Actor_RequestQuakeAndRumble(thisx, play, 4, 8);
+                Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_THUNDER_GND);
+                sZopFinaleState = ZOP_FINALE_RECOVER;
+                sZopFinaleTimer = 30;
+            }
+            break;
+        case ZOP_FINALE_RECOVER:
+            if (sZopFinaleTimer == 0) {
+                BossGanondrof_SetupNeutral(this, -6.0f);
+                this->flyMode = GND_FLY_NEUTRAL;
+                this->timers[0] = 40;
+            }
+            break;
+    }
+    Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_FLOAT - SFX_FLAG);
 }
 
 void BossGanondrof_SetupCharge(BossGanondrof* this, PlayState* play) {
@@ -1192,6 +1308,8 @@ void BossGanondrof_Charge(BossGanondrof* this, PlayState* play) {
                         Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonChargeWindupAnim, -3.0f);
                         BossGanondrof_ZopChargeFlash(this, play);
                         Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_ATTACK);
+                    } else if (ZOP_DifficultyEnabled()) {
+                        BossGanondrof_ZopSetupFinale(this, play);
                     } else {
                         BossGanondrof_SetupNeutral(this, -10.0f);
                         this->timers[0] = 30;
