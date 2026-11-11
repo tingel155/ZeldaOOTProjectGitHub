@@ -901,7 +901,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                             this->actor.world.rot.y = Math_FAtan2F(dxL2, dzL2) * (0x8000 / M_PI);
                             this->actor.world.rot.x =
                                 Math_FAtan2F(dyL2, sqrtf(SQ(dxL2) + SQ(dzL2))) * (0x8000 / M_PI);
-                            this->actor.speedXZ += 1.5f;
+                            // (same speed: Link needs the time for another spin attack)
                             Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_REFLECT_MG);
                             ZOP_GndRallyFlash(0.4f);
                             BossGanondrof_SetupReturn(bossGnd, play);

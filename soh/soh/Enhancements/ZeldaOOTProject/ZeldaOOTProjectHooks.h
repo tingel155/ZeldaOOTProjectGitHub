@@ -81,6 +81,8 @@ float ZOP_LockOnLeapSpeed(void);
 float ZOP_SideHopHeight(float vanillaHeight);
 // Air control in hops / Z-targeting jumps (push per frame, 0 = off)
 float ZOP_AirControl(void);
+// Lock-on camera without a jolt when Link jumps
+int ZOP_SmoothJumpCamera(void);
 
 // z_camera.c, Camera_Battle1 (lock-on camera): scales the camera distance and field of view for the target (an
 // Actor*); playerPos is a Vec3f* (ModernControls.cpp)

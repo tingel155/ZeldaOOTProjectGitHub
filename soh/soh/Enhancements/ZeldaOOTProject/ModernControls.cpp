@@ -346,6 +346,11 @@ extern "C" float ZOP_SideHopHeight(float vanillaHeight) {
 
 // Air control in hops / Z-targeting jumps: how much the stick can push the flight per frame (gZOP.Controls.AirControl,
 // 0 = off as in vanilla)
+// Lock-on camera without a jolt when Link jumps (gZOP.Controls.SmoothJumpCamera)
+extern "C" int ZOP_SmoothJumpCamera(void) {
+    return ControlsEnabled() && CVarGetInteger(CVAR_ZOP_CONTROLS("SmoothJumpCamera"), 1);
+}
+
 extern "C" float ZOP_AirControl(void) {
     return ControlsEnabled() ? CVarGetFloat(CVAR_ZOP_CONTROLS("AirControl"), 1.1f) : 0.0f;
 }

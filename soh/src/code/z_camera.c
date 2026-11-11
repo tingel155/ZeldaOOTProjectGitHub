@@ -3042,11 +3042,31 @@ s32 Camera_Battle1(Camera* camera) {
         return true;
     }
 
-    Camera_CalcAtForLockOn(camera, &atToEyeNextDir, &camera->targetPosRot.pos,
-                           isOffGround ? batt1->yOffsetOffGround : batt1->yOffset, distance, &anim->yPosOffset,
-                           &playerToTargetDir, (isOffGround ? 0x81 : 1) | batt1->flags);
+    {
+        // ZeldaOOTProject: no jolt when Link jumps while Z-targeting: the height offset eases over to its value for
+        // the air instead of switching at once, and the camera tilt is taken from Link's height over the floor he
+        // jumped from rather than from his head going up (ModernControls.cpp)
+        static f32 sZopYOffset = -1.0f;
+        f32 yOffsetTarget = isOffGround ? batt1->yOffsetOffGround : batt1->yOffset;
+
+        if (ZOP_SmoothJumpCamera()) {
+            if ((sZopYOffset < 0.0f) || (camera->animState == 1) || (camera->animState == 0xB) ||
+                (camera->animState == 0x15)) {
+                sZopYOffset = yOffsetTarget;
+            } else {
+                Math_ApproachF(&sZopYOffset, yOffsetTarget, 0.12f, 3.0f);
+            }
+            yOffsetTarget = sZopYOffset;
+        }
+        Camera_CalcAtForLockOn(camera, &atToEyeNextDir, &camera->targetPosRot.pos, yOffsetTarget, distance,
+                               &anim->yPosOffset, &playerToTargetDir, (isOffGround ? 0x81 : 1) | batt1->flags);
+    }
     tmpAng2 = playerToTargetDir.yaw;
     playerHead = playerPosRot->pos;
+    if (ZOP_SmoothJumpCamera() && isOffGround && (camera->playerGroundY > BGCHECK_Y_MIN) &&
+        (camera->playerGroundY < playerHead.y)) {
+        playerHead.y = camera->playerGroundY;
+    }
     playerHead.y += playerHeight;
     OLib_Vec3fDiffToVecSphGeo(&playerToTargetDir, &playerHead, &camera->targetPosRot.pos);
     distRatio = playerToTargetDir.r > distance ? 1 : playerToTargetDir.r / distance;
