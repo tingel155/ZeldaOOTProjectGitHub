@@ -699,7 +699,8 @@ void EnfHG_Update(Actor* thisx, PlayState* play) {
         (this->actor.parent != NULL)) {
         BossGanondrof* bossGnd = (BossGanondrof*)this->actor.parent;
 
-        bossGnd->actor.colChkInfo.health = ZOP_DifficultyEnabled() ? GND_ZOP_PHASE2_HEALTH : 24;
+        // (with ZeldaOOTProject difficulty just above phase 2b, so the first sword hit brings his spell)
+        bossGnd->actor.colChkInfo.health = ZOP_DifficultyEnabled() ? GND_ZOP_PHASEB_HEALTH + 2 : 24;
         bossGnd->flyMode = GND_FLY_NEUTRAL;
         this->actionFunc = EnfHG_Done;
         this->actor.draw = NULL;
