@@ -740,13 +740,14 @@ void BossGanondrof_Neutral(BossGanondrof* this, PlayState* play) {
             if (this->timers[0] == 0) {
                 this->timers[0] = (s16)(Rand_ZeroOne() * 64.0f) + 30;
                 rand01 = Rand_ZeroOne();
-                if (ZOP_DifficultyEnabled() && (rand01 < ZOP_CHARGE_CHANCE)) {
+                if (ZOP_DifficultyEnabled() && (rand01 < ZOP_CHARGE_CHANCE) && !ZOP_TestGanondrofSlam()) {
                     // ZeldaOOTProject: he flies at Link a lot more often (vanilla: only below 5 health)
                     this->flyMode = GND_FLY_CHARGE;
                     this->timers[0] = 60;
                     this->fwork[GND_FLOAT_SPEED] = 0.0f;
                     Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_LAUGH);
-                } else if (ZOP_DifficultyEnabled() && (rand01 < ZOP_CHARGE_CHANCE + ZOP_SLAM_CHANCE)) {
+                } else if (ZOP_DifficultyEnabled() &&
+                           ((rand01 < ZOP_CHARGE_CHANCE + ZOP_SLAM_CHANCE) || ZOP_TestGanondrofSlam())) {
                     // ZeldaOOTProject: the staff slam with its rings, without a charge before it; afterwards he is open
                     // to attacks for a moment
                     BossGanondrof_ZopSetupFinale(this, play);
@@ -1063,11 +1064,20 @@ static void BossGanondrof_ZopChargeFlash(BossGanondrof* this, PlayState* play) {
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_LAUGH);
 }
 
+// ZeldaOOTProject: height of the arena floor under (x, z) (not Link's height: he may be in the air or below)
+static f32 BossGanondrof_ZopFloorY(PlayState* play, f32 x, f32 z) {
+    CollisionPoly* poly;
+    Vec3f pos = { x, GND_BOSSROOM_CENTER_Y + 300.0f, z };
+    f32 y = BgCheck_EntityRaycastFloor1(&play->colCtx, &poly, &pos);
+
+    return (y > BGCHECK_Y_MIN) ? y : GND_BOSSROOM_CENTER_Y;
+}
+
 // ZeldaOOTProject: the end of a charge: he slams lightning into the floor, a damaging burst and a ring spreading over
 // the floor that Link has to jump over
 static void BossGanondrof_ZopChargeImpact(BossGanondrof* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
-    f32 groundY = player->actor.world.pos.y;
+    f32 groundY = BossGanondrof_ZopFloorY(play, this->actor.world.pos.x, this->actor.world.pos.z);
 
     Actor_Spawn(&play->actorCtx, play, ACTOR_EN_FHG_FIRE, this->actor.world.pos.x, groundY + 20.0f,
                 this->actor.world.pos.z, 400, 0, 0, FHGFIRE_LIGHTNING_BURST);
@@ -1090,6 +1100,7 @@ typedef enum {
 } ZopFinaleState;
 
 #define ZOP_FINALE_RING_RADIUS 650.0f
+#define ZOP_KNEEL_HEIGHT 38.0f // his origin over the floor when kneeling (stunned: y 5 over the floor at -33)
 
 static s16 sZopFinaleState;
 static s16 sZopFinaleTimer;
@@ -1107,7 +1118,7 @@ static void BossGanondrof_ZopSetupFinale(BossGanondrof* this, PlayState* play) {
     sZopFinaleState = ZOP_FINALE_FLY;
     sZopFinaleAlone = false;
     sZopFinaleTimer = 50; // fallback
-    sZopFinaleGroundY = GET_PLAYER(play)->actor.world.pos.y;
+    sZopFinaleGroundY = BossGanondrof_ZopFloorY(play, GND_BOSSROOM_CENTER_X, GND_BOSSROOM_CENTER_Z);
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_LAUGH);
 }
 
@@ -1127,7 +1138,7 @@ static void BossGanondrof_ZopFinale(BossGanondrof* this, PlayState* play) {
 
     if (sZopFinaleAlone && (sZopFinaleState >= ZOP_FINALE_RINGS)) {
         this->shockTimer = 2;
-        Math_ApproachF(&thisx->world.pos.y, sZopFinaleGroundY, 0.3f, 5.0f);
+        Math_ApproachF(&thisx->world.pos.y, sZopFinaleGroundY + ZOP_KNEEL_HEIGHT, 0.5f, 8.0f);
         if ((this->work[GND_VARIANCE_TIMER] % 20) == 0) {
             Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_DAMAGE2);
         }
@@ -1160,7 +1171,7 @@ static void BossGanondrof_ZopFinale(BossGanondrof* this, PlayState* play) {
             break;
         case ZOP_FINALE_SLAM:
             // down he goes, staff first
-            Math_ApproachF(&thisx->world.pos.y, sZopFinaleGroundY + 50.0f, 0.6f, 35.0f);
+            Math_ApproachF(&thisx->world.pos.y, sZopFinaleGroundY + ZOP_KNEEL_HEIGHT + 15.0f, 0.6f, 35.0f);
             if (sZopFinaleTimer == 0) {
                 Actor_Spawn(&play->actorCtx, play, ACTOR_EN_FHG_FIRE, GND_BOSSROOM_CENTER_X, sZopFinaleGroundY + 20.0f,
                             GND_BOSSROOM_CENTER_Z, 500, 0, 0, FHGFIRE_LIGHTNING_BURST);
@@ -1765,6 +1776,16 @@ void BossGanondrof_Update(Actor* thisx, PlayState* play) {
 
     if (sZopBurstCooldown > 0) {
         sZopBurstCooldown--;
+    }
+    // ZeldaOOTProject testing aid (gZOP.TestEnv.GanondrofSlam): Link is put into the arena (from the elevator below)
+    if (ZOP_TestGanondrofSlam() && (this->actor.params == GND_REAL_BOSS) &&
+        (GET_PLAYER(play)->actor.world.pos.y < GND_BOSSROOM_CENTER_Y - 50.0f)) {
+        Player* zopPlayer = GET_PLAYER(play);
+
+        zopPlayer->actor.world.pos.x = zopPlayer->actor.home.pos.x = GND_BOSSROOM_CENTER_X;
+        zopPlayer->actor.world.pos.y = zopPlayer->actor.home.pos.y = GND_BOSSROOM_CENTER_Y;
+        zopPlayer->actor.world.pos.z = zopPlayer->actor.home.pos.z = GND_BOSSROOM_CENTER_Z + 250.0f;
+        zopPlayer->actor.prevPos = zopPlayer->actor.world.pos;
     }
     if (this->actor.params == GND_REAL_BOSS) {
         BossGanondrof_ZopPowerUpdate(this, play);

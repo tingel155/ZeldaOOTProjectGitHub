@@ -106,6 +106,8 @@ int ZOP_TestPhase2Intro(void);
 int ZOP_TestGohmaEye(void);
 // Testing aid: Phantom Ganon skips his intro and painting phase and starts floating
 int ZOP_TestGanondrofPhase2(void);
+// Testing aid: Link is put into the arena and Phantom Ganon only does his staff slam
+int ZOP_TestGanondrofSlam(void);
 
 #ifdef __cplusplus
 }
