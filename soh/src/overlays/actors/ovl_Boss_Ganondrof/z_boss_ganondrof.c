@@ -222,7 +222,7 @@ static s16 sZopChargesLeft;     // charge attack: more charges to come in this s
 #define ZOP_CHARGE_REWINDUP 12   // wind-up frames between two charges of a series
 #define ZOP_SLAM_CHANCE 0.25f    // chance of the staff slam on its own whenever he picks his next move
 static void BossGanondrof_ZopSetupFinale(BossGanondrof* this, PlayState* play);
-static u8 sZopFinaleAlone; // staff slam on its own (not after a charge series): open to attacks after the slam
+static u8 sZopFinaleAlone; // open to attacks after the staff slam (kneeling); set for every slam
 #define ZOP_POWER_FLASH_FRAMES 12
 
 void BossGanondrof_Init(Actor* thisx, PlayState* play) {
@@ -751,7 +751,6 @@ void BossGanondrof_Neutral(BossGanondrof* this, PlayState* play) {
                     // ZeldaOOTProject: the staff slam with its rings, without a charge before it; afterwards he is open
                     // to attacks for a moment
                     BossGanondrof_ZopSetupFinale(this, play);
-                    sZopFinaleAlone = true;
                 } else if (thisx->colChkInfo.health < 5) {
                     if (rand01 < 0.25f) {
                         BossGanondrof_SetupThrow(this, play);
@@ -1116,7 +1115,7 @@ static void BossGanondrof_ZopSetupFinale(BossGanondrof* this, PlayState* play) {
     this->actor.velocity.x = this->actor.velocity.y = this->actor.velocity.z = 0.0f;
     this->actor.gravity = 0.0f;
     sZopFinaleState = ZOP_FINALE_FLY;
-    sZopFinaleAlone = false;
+    sZopFinaleAlone = true; // always open to attacks after the slam (on its own or after a charge series)
     sZopFinaleTimer = 50; // fallback
     sZopFinaleGroundY = BossGanondrof_ZopFloorY(play, GND_BOSSROOM_CENTER_X, GND_BOSSROOM_CENTER_Z);
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_LAUGH);
