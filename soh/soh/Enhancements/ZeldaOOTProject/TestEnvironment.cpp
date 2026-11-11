@@ -105,6 +105,11 @@ static void TestEnv_Boot(GameState* state) {
     gSaveContext.magicCapacity = 0;
     gSaveContext.magicLevel = 0;
 
+    // Boss keys of the first temples, so a test can start in front of a boss door (e.g. Forest Temple: entrance 0x24E)
+    gSaveContext.inventory.dungeonItems[SCENE_FOREST_TEMPLE] |= gBitFlags[DUNGEON_KEY_BOSS];
+    gSaveContext.inventory.dungeonItems[SCENE_FIRE_TEMPLE] |= gBitFlags[DUNGEON_KEY_BOSS];
+    gSaveContext.inventory.dungeonItems[SCENE_WATER_TEMPLE] |= gBitFlags[DUNGEON_KEY_BOSS];
+
     gSaveContext.dayTime = CVarGetInteger(CVAR_ZOP_TESTENV("DayTime"), 0x8000);
     gSaveContext.nightFlag = (gSaveContext.dayTime < 0x4555 || gSaveContext.dayTime >= 0xC001);
 
