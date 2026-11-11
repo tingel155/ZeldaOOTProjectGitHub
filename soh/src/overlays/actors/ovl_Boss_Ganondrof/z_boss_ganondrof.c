@@ -1322,10 +1322,10 @@ void BossGanondrof_Block(BossGanondrof* this, PlayState* play) {
 // kneels; the music stops; he starts to tremble, electricity crackles and lashes out of him, a hum rises; then he
 // breaks loose: he shoots up screaming, a blinding flash, a hail of balls in all directions, and the boss theme
 // starts over
-#define ZOP_RAGE_KNEEL 22   // on the floor
-#define ZOP_RAGE_SHAKE 32   // he starts to tremble
-#define ZOP_RAGE_BURST 78   // he breaks loose
-#define ZOP_RAGE_END 112
+#define ZOP_RAGE_KNEEL 34   // on the floor
+#define ZOP_RAGE_SHAKE 56   // he starts to tremble
+#define ZOP_RAGE_BURST 136  // he breaks loose
+#define ZOP_RAGE_END 196
 #define ZOP_RAGE_BALLS 14
 
 static void BossGanondrof_ZopSetupRage(BossGanondrof* this, PlayState* play) {
@@ -1352,6 +1352,34 @@ static void BossGanondrof_ZopSetupRage(BossGanondrof* this, PlayState* play) {
     this->shockTimer = 0;
     sZopRageTimer = 0;
     sZopRageBasePos = this->actor.world.pos;
+
+    // Link steps back, so he doesn't stand in Phantom Ganon during the cutscene
+    {
+        Player* player = GET_PLAYER(play);
+        f32 dx = player->actor.world.pos.x - sZopRageBasePos.x;
+        f32 dz = player->actor.world.pos.z - sZopRageBasePos.z;
+        f32 d = sqrtf(SQ(dx) + SQ(dz));
+
+        if (d < 190.0f) {
+            f32 nx = (d > 1.0f) ? dx / d : 0.0f;
+            f32 nz = (d > 1.0f) ? dz / d : 1.0f;
+            Vec3f spot = { sZopRageBasePos.x + nx * 190.0f, player->actor.world.pos.y, sZopRageBasePos.z + nz * 190.0f };
+            f32 cx = spot.x - GND_BOSSROOM_CENTER_X;
+            f32 cz = spot.z - GND_BOSSROOM_CENTER_Z;
+            f32 cr = sqrtf(SQ(cx) + SQ(cz));
+
+            // not over the edge of the platform: then to the other side of him, toward the middle
+            if (cr > 280.0f) {
+                spot.x = sZopRageBasePos.x - nx * 190.0f;
+                spot.z = sZopRageBasePos.z - nz * 190.0f;
+            }
+            player->actor.world.pos.x = spot.x;
+            player->actor.world.pos.z = spot.z;
+            player->actor.prevPos = player->actor.world.pos;
+            player->actor.shape.rot.y = player->actor.world.rot.y =
+                Math_Vec3f_Yaw(&player->actor.world.pos, &sZopRageBasePos);
+        }
+    }
 
     func_80064520(play, &play->csCtx);
     Player_SetCsActionWithHaltedActors(play, &this->actor, 1);
@@ -1382,7 +1410,7 @@ static void BossGanondrof_ZopRage(BossGanondrof* this, PlayState* play) {
 
     if (t < ZOP_RAGE_BURST) {
         // down to the floor, kneeling
-        Math_ApproachF(&sZopRageBasePos.y, floorY + 38.0f, 0.3f, 14.0f);
+        Math_ApproachF(&sZopRageBasePos.y, floorY + 38.0f, 0.15f, 7.0f);
         thisx->world.pos = sZopRageBasePos;
         if (t == ZOP_RAGE_KNEEL) {
             Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonStunnedAnim, -8.0f);
@@ -1399,7 +1427,7 @@ static void BossGanondrof_ZopRage(BossGanondrof* this, PlayState* play) {
         thisx->world.pos.z += Rand_CenteredFloat(2.0f + p * 5.0f);
         thisx->world.pos.y += Rand_CenteredFloat(1.0f + p * 2.0f);
         this->shockTimer = 2;
-        if ((t % (8 - (s16)(p * 6.0f))) == 0) {
+        if ((t % (12 - (s16)(p * 9.0f))) == 0) {
             Vec3f pos = this->targetPos;
 
             EffectSsLightning_Spawn(play, &pos, &boltPrim, &boltEnv, (s16)(80 + p * 150.0f + Rand_ZeroOne() * 60.0f),
@@ -1459,17 +1487,28 @@ static void BossGanondrof_ZopRage(BossGanondrof* this, PlayState* play) {
     }
     if (t > ZOP_RAGE_BURST) {
         // up he shoots
-        Math_ApproachF(&thisx->world.pos.y, floorY + 150.0f, 0.2f, 16.0f);
+        Math_ApproachF(&thisx->world.pos.y, floorY + 150.0f, 0.08f, 6.0f);
         thisx->world.pos.y += 2.0f * Math_SinS(this->work[GND_VARIANCE_TIMER] * 1500);
-        if (t == ZOP_RAGE_BURST + 14) {
+        if (t == ZOP_RAGE_BURST + 24) {
             Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonNeutralAnim, -8.0f);
         }
     }
 
-    // camera: low from Link's side while he kneels and trembles, pulling back and up when he breaks loose
+    // camera: low from Link's side while he kneels and trembles, slowly pulling back and up when he breaks loose
     {
-        f32 back = (t < ZOP_RAGE_BURST) ? 170.0f : 300.0f;
-        f32 up = (t < ZOP_RAGE_BURST) ? 45.0f : 120.0f;
+        static f32 sBack;
+        static f32 sUp;
+        f32 back;
+        f32 up;
+
+        if (t == 1) {
+            sBack = 170.0f;
+            sUp = 45.0f;
+        }
+        Math_ApproachF(&sBack, (t < ZOP_RAGE_BURST) ? 170.0f : 300.0f, 0.05f, 4.0f);
+        Math_ApproachF(&sUp, (t < ZOP_RAGE_BURST) ? 45.0f : 120.0f, 0.05f, 2.5f);
+        back = sBack;
+        up = sUp;
 
         eye.x = sZopRageBasePos.x + Math_SinS(yawToLink) * back;
         eye.y = floorY + up;
@@ -2333,7 +2372,11 @@ void BossGanondrof_Update(Actor* thisx, PlayState* play) {
     Math_ApproachF(&this->legRotY, legRotTargetY, 1.0f, 600.0f);
     Math_ApproachF(&this->legRotZ, legRotTargetZ, 1.0f, 600.0f);
     if ((this->flyMode != GND_FLY_PAINTING) && (this->actionFunc != BossGanondrof_Stunned) &&
-        (this->deathState == NOT_DEAD)) {
+        (this->deathState == NOT_DEAD) &&
+        // ZeldaOOTProject: kneeling, not floating, in the rage cutscene and after his staff slam
+        !((this->actionFunc == BossGanondrof_ZopRage) && (sZopRageTimer >= ZOP_RAGE_KNEEL - 6) &&
+          (sZopRageTimer < ZOP_RAGE_BURST)) &&
+        !((this->actionFunc == BossGanondrof_ZopFinale) && sZopFinaleAlone && (sZopFinaleState >= ZOP_FINALE_RINGS))) {
         legSplitTarget = (Math_SinS(this->work[GND_VARIANCE_TIMER] * 0x8DC) * -500.0f) - 500.0f;
     } else {
         legSplitTarget = 0.0f;
