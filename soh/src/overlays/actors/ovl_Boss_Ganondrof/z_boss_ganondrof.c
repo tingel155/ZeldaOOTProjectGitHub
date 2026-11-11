@@ -526,8 +526,8 @@ static void BossGanondrof_ZopPurpleSparks(BossGanondrof* this, PlayState* play, 
 void BossGanondrof_ZopTryPowerUp(BossGanondrof* this, PlayState* play, s16 rallyHits) {
     EnfHG* horse = (EnfHG*)this->actor.child;
 
-    // The farther Link is, the easier the rally, so the more likely the power hit: 5% up close, 80% from 600 on
-    f32 chance = CLAMP((this->actor.xzDistToPlayer - ZOP_POWER_NEAR) / (ZOP_POWER_FAR - ZOP_POWER_NEAR), 0.05f, 0.8f);
+    // The farther Link is, the easier the rally, so the more likely the power hit: 20% up close, 80% from 600 on
+    f32 chance = CLAMP((this->actor.xzDistToPlayer - ZOP_POWER_NEAR) / (ZOP_POWER_FAR - ZOP_POWER_NEAR), 0.2f, 0.8f);
 
     if (!ZOP_DifficultyEnabled() || (sZopPowerTimer > 0) || (rallyHits < ZOP_POWER_MIN_HITS) ||
         ((this->actionFunc != BossGanondrof_Neutral) && (this->actionFunc != BossGanondrof_Return)) ||
@@ -593,7 +593,9 @@ static void BossGanondrof_ZopPowerUpdate(BossGanondrof* this, PlayState* play) {
 }
 
 s32 BossGanondrof_ZopTryCatch(BossGanondrof* this, PlayState* play, s16 rallyHits) {
+    // (not while his staff is charged: then he always hits the ball back, with his power hit)
     if (!ZOP_DifficultyEnabled() || (sZopBurstCooldown > 0) || (rallyHits < ZOP_BURST_MIN_HITS) ||
+        (sZopPowerTimer > 0) ||
         (this->deathState != NOT_DEAD) || (this->actionFunc == BossGanondrof_Stunned) ||
         (Rand_ZeroOne() > ZOP_BURST_CHANCE)) {
         return false;
