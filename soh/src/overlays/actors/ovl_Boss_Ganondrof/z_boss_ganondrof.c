@@ -220,7 +220,7 @@ static s16 sZopChargesLeft;     // charge attack: more charges to come in this s
 #define ZOP_GND_CHARGE_DAMAGE 0x20
 #define ZOP_CHARGE_SPEED 18.0f   // vanilla 10
 #define ZOP_CHARGE_REWINDUP 12   // wind-up frames between two charges of a series
-#define ZOP_SLAM_CHANCE 0.25f    // chance of the staff slam on its own whenever he picks his next move
+#define ZOP_SLAM_CHANCE 0.1f     // chance of the staff slam on its own whenever he picks his next move
 static void BossGanondrof_ZopSetupFinale(BossGanondrof* this, PlayState* play);
 static u8 sZopFinaleAlone; // open to attacks after the staff slam (kneeling); set for every slam
 #define ZOP_POWER_FLASH_FRAMES 12
@@ -477,7 +477,7 @@ static s16 sZopBurstTimer;
 static void BossGanondrof_ZopBurst(BossGanondrof* this, PlayState* play);
 
 // ---------- ZeldaOOTProject: power hit
-#define ZOP_CHARGE_CHANCE 0.25f // chance of his charge attack whenever he picks his next move
+#define ZOP_CHARGE_CHANCE 0.1f // chance of his charge attack whenever he picks his next move
 
 #define ZOP_POWER_MIN_HITS 2   // rally hits before he may charge his staff
 #define ZOP_POWER_NEAR 250.0f  // distance to Link at which the chance per return of his is lowest
