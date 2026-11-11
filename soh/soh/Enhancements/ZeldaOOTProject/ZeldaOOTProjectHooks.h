@@ -74,6 +74,8 @@ float ZOP_LockOnTurnStep(float vanillaStep);
 // (ModernControls.cpp)
 int ZOP_LockOnLeap(void);
 float ZOP_LockOnLeapSpeed(void);
+// Jump height of the side hops while Z-targeting (as high as forward/back with modern controls)
+float ZOP_SideHopHeight(float vanillaHeight);
 
 // z_camera.c, Camera_Battle1 (lock-on camera): scales the camera distance and field of view for the target (an
 // Actor*); playerPos is a Vec3f* (ModernControls.cpp)

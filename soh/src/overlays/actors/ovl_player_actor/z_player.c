@@ -6331,8 +6331,9 @@ s32 Player_TryRoll(Player* this, PlayState* play) {
 }
 
 void func_8083BCD0(Player* this, PlayState* play, s32 controlStickDirection) {
-    func_80838940(this, D_80853D4C[controlStickDirection][0], !(controlStickDirection & 1) ? 5.8f : 3.5f, play,
-                  NA_SE_VO_LI_SWORD_N);
+    // ZeldaOOTProject: side hops can be as high as the hops forward and back
+    func_80838940(this, D_80853D4C[controlStickDirection][0],
+                  !(controlStickDirection & 1) ? 5.8f : ZOP_SideHopHeight(3.5f), play, NA_SE_VO_LI_SWORD_N);
 
     if (controlStickDirection) {}
 

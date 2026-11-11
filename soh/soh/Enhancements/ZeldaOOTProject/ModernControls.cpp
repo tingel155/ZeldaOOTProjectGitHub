@@ -338,6 +338,12 @@ extern "C" float ZOP_LockOnLeapSpeed(void) {
     return CVarGetFloat(CVAR_ZOP_CONTROLS("LeapSpeed"), 8.0f);
 }
 
+// Side hops while Z-targeting jump as high as the hops forward and back (vanilla: 3.5 vs 5.8), so they clear things
+// on the floor (gZOP.Controls.HighSideHop)
+extern "C" float ZOP_SideHopHeight(float vanillaHeight) {
+    return (ControlsEnabled() && CVarGetInteger(CVAR_ZOP_CONTROLS("HighSideHop"), 1)) ? 5.8f : vanillaHeight;
+}
+
 extern "C" float ZOP_LockOnTurnStep(float vanillaStep) {
     if (!ControlsEnabled()) {
         return vanillaStep;
