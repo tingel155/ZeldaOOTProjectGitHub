@@ -6410,6 +6410,13 @@ s32 Player_ActionHandler_10(Player* this, PlayState* play) {
                         } else {
                             func_8083BA90(play, this, PLAYER_MWA_JUMPSLASH_START, 5.0f, 5.0f);
                         }
+                    } else if (ZOP_LockOnLeap()) {
+                        // ZeldaOOTProject: with the sword sheathed too, A jumps while Z-targeting (straight up when
+                        // standing still); Link only rolls when nothing is targeted
+                        func_8083BCD0(this, play, PLAYER_STICK_DIR_FORWARD);
+                        this->linearVelocity =
+                            (controlStickDirection <= PLAYER_STICK_DIR_NONE) ? 0.0f : ZOP_LockOnLeapSpeed();
+                        this->actor.velocity.y = 6.0f * sWaterSpeedFactor;
                     } else {
                         Player_SetupRoll(this, play);
                     }
