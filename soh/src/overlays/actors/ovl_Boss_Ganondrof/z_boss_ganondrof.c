@@ -630,6 +630,15 @@ void BossGanondrof_ZopAbsorbed(BossGanondrof* this, PlayState* play) {
     }
 }
 
+static u8 sZopBurstReturns; // this burst: he hits the balls back once more after Link returned them
+
+s32 BossGanondrof_ZopBurstReturns(BossGanondrof* this) {
+    // only while he is free to swing (not stunned, not in another attack)
+    return sZopBurstReturns && ((this->actionFunc == BossGanondrof_Neutral) ||
+                                (this->actionFunc == BossGanondrof_Return) ||
+                                (this->actionFunc == BossGanondrof_ZopBurst));
+}
+
 static void BossGanondrof_ZopExplode(BossGanondrof* this, PlayState* play) {
     static Color_RGBA8 boltPrim = { 255, 255, 255, 255 };
     static Color_RGBA8 boltEnv = { 120, 255, 120, 255 };
@@ -641,6 +650,7 @@ static void BossGanondrof_ZopExplode(BossGanondrof* this, PlayState* play) {
     s16 i;
 
     sZopBurstState = ZOP_BURST_THROW;
+    sZopBurstReturns = Rand_ZeroOne() < 0.3f;
     this->fwork[GND_END_FRAME] = Animation_GetLastFrame(&gPhantomGanonThrowEndAnim);
     Animation_MorphToPlayOnce(&this->skelAnime, &gPhantomGanonThrowEndAnim, 0.0f);
     this->shockTimer = 10;
@@ -834,17 +844,17 @@ static void BossGanondrof_ZopFloorShots(BossGanondrof* this, PlayState* play) {
         f32 dz;
         Actor* ball;
 
+        // (no longer as far apart as possible: a quarter to a third of a turn on, at any distance)
         if (sZopShotDist >= 0.0f) {
-            sZopShotAngle += 0x8000 + (s16)Rand_CenteredFloat(0x3000);
+            sZopShotAngle += ((Rand_ZeroOne() < 0.5f) ? -1 : 1) * (s16)(0x2000 + Rand_ZeroOne() * 0x2000);
         }
-        sZopShotDist = ((sZopShotDist < 0.0f) ? (Rand_ZeroOne() < 0.5f) : (sZopShotDist < 180.0f))
-                           ? 220.0f + Rand_ZeroOne() * 70.0f
-                           : 60.0f + Rand_ZeroOne() * 80.0f;
+        sZopShotDist = 80.0f + Rand_ZeroOne() * 190.0f;
         spot.x = GND_BOSSROOM_CENTER_X + Math_SinS(sZopShotAngle) * sZopShotDist;
         spot.y = GND_BOSSROOM_CENTER_Y;
         spot.z = GND_BOSSROOM_CENTER_Z + Math_CosS(sZopShotAngle) * sZopShotDist;
         ball = Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_FHG_FIRE, mother->world.pos.x,
-                                  mother->world.pos.y, mother->world.pos.z, 0, 0, 0, FHGFIRE_ENERGY_BALL);
+                                  mother->world.pos.y, mother->world.pos.z, 0, 0,
+                                  (Rand_ZeroOne() < 0.4f) ? GND_ZOP_LANE_BALL : 0, FHGFIRE_ENERGY_BALL);
         this->actor.child = &horse->actor;
         if (ball != NULL) {
             dx = spot.x - ball->world.pos.x;

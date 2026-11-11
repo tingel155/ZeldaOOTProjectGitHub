@@ -642,9 +642,9 @@ static u8 EnFhgFire_ZopBurstBall(EnFhgFire* this, PlayState* play, BossGanondrof
             EffectSsFhgFlash_SpawnLightBall(play, &this->actor.world.pos, &vel, &accel,
                                             (s16)(Rand_ZeroOne() * 25.0f) + 50, FHGFLASH_LIGHTBALL_LIGHTBLUE);
         }
-        // Back to him, and it can't miss
+        // Back to him: it can't miss, unless he hits it back once more (see the LIGHT_BLUE case)
         this->work[FHGFIRE_FIRE_MODE] = FHGFIRE_LIGHT_BLUE;
-        this->work[FHGFIRE_RETURN_COUNT] = 100;
+        this->work[FHGFIRE_RETURN_COUNT]++;
         this->work[FHGFIRE_FX_TIMER] = 2;
         this->actor.speedXZ = 14.0f;
         this->actor.world.rot.y = (s16)(Math_FAtan2F(dxPG, dzPG) * (0x8000 / M_PI));
@@ -885,7 +885,31 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                 }
                 break;
             case FHGFIRE_LIGHT_BLUE:
-                if ((bossGnd->flyMode == GND_FLY_RETURN) && (this->work[FHGFIRE_RETURN_COUNT] < 100)) {
+                if (ZOP_IS_BURST_BALL && (this->work[FHGFIRE_RETURN_COUNT] < 100)) {
+                    // ZeldaOOTProject: a burst ball Link sent back. Sometimes (30% of the bursts) he hits each one
+                    // back once more, and Link has to spin again; otherwise, or the second time, it hits him
+                    this->actor.world.rot.y = Math_FAtan2F(dxPG, dzPG) * (0x8000 / M_PI);
+                    this->actor.world.rot.x = Math_FAtan2F(dyPG, sqrtf(SQ(dxPG) + SQ(dzPG))) * (0x8000 / M_PI);
+                    if (sqrtf(SQ(dxPG) + SQ(dzPG)) < (ZOP_GND_RETURN_DIST + this->actor.speedXZ * 2.0f)) {
+                        if (BossGanondrof_ZopBurstReturns(bossGnd) && (this->work[FHGFIRE_RETURN_COUNT] == 1)) {
+                            f32 dxL2 = player->actor.world.pos.x - this->actor.world.pos.x;
+                            f32 dyL2 = player->actor.world.pos.y + 40.0f - this->actor.world.pos.y;
+                            f32 dzL2 = player->actor.world.pos.z - this->actor.world.pos.z;
+
+                            this->work[FHGFIRE_FIRE_MODE] = FHGFIRE_LIGHT_GREEN;
+                            this->work[FHGFIRE_FX_TIMER] = 2;
+                            this->actor.world.rot.y = Math_FAtan2F(dxL2, dzL2) * (0x8000 / M_PI);
+                            this->actor.world.rot.x =
+                                Math_FAtan2F(dyL2, sqrtf(SQ(dxL2) + SQ(dzL2))) * (0x8000 / M_PI);
+                            this->actor.speedXZ += 1.5f;
+                            Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_REFLECT_MG);
+                            ZOP_GndRallyFlash(0.4f);
+                            BossGanondrof_SetupReturn(bossGnd, play);
+                        } else {
+                            this->work[FHGFIRE_RETURN_COUNT] = 100; // hits him
+                        }
+                    }
+                } else if ((bossGnd->flyMode == GND_FLY_RETURN) && (this->work[FHGFIRE_RETURN_COUNT] < 100)) {
                     this->actor.world.rot.y = Math_FAtan2F(dxPG, dzPG) * (0x8000 / M_PI);
                     // His swing starts this far away and takes 8 frames, so the ball turns about the base distance
                     // in front of him (ZeldaOOTProject: later, closer to him)
@@ -1030,7 +1054,16 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
 
                     Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_FHG_FIRE, this->actor.world.pos.x,
                                        groundY + 20.0f, this->actor.world.pos.z, 300, 0, 0, FHGFIRE_LIGHTNING_BURST);
-                    ZOP_SpawnGndRing(play, this->actor.world.pos.x, groundY, this->actor.world.pos.z, 320.0f, 9.0f);
+                    if (this->actor.world.rot.z == GND_ZOP_LANE_BALL) {
+                        // some of his floor shots: Gohma's glowing rifts racing over the floor, fanned out at Link
+                        ZOP_SpawnGohmaFloorLanes(play, &this->actor, this->actor.world.pos.x, groundY,
+                                                 this->actor.world.pos.z,
+                                                 Math_Vec3f_Yaw(&this->actor.world.pos, &player->actor.world.pos),
+                                                 3);
+                    } else {
+                        ZOP_SpawnGndRing(play, this->actor.world.pos.x, groundY, this->actor.world.pos.z, 320.0f,
+                                         9.0f);
+                    }
                     ZOP_GndRallyFlash(0.5f);
                 }
                 bossGnd->flyMode = GND_FLY_NEUTRAL;

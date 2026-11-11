@@ -124,6 +124,11 @@ typedef struct BossGanondrof {
 // The big ball of his floor-shot attack that floats over the middle of the room and fires balls into the floor
 #define GND_ZOP_MOTHER_BALL 2
 #define GND_ZOP_MOTHER_HEIGHT 210.0f // over the arena floor
+// A floor shot that makes Gohma's glowing rifts instead of a ring when it hits the floor
+#define GND_ZOP_LANE_BALL 3
+// Catch-and-burst: whether he hits the burst balls back once more after Link returned them
+s32 BossGanondrof_ZopBurstReturns(BossGanondrof* boss);
+void BossGanondrof_SetupReturn(BossGanondrof* boss, PlayState* play);
 // Phase 2 health with ZeldaOOTProject difficulty (vanilla: 24)
 #define GND_ZOP_PHASE2_HEALTH 56
 // Power hit: now and then in a rally he raises his staff once, it flashes and gets a purple aura for the rest of the
