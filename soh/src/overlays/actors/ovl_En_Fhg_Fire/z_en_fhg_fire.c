@@ -26,8 +26,8 @@
 #define ZOP_GND_BALL_DAMAGE 0x28
 // Damage of the shock Link gets when he blocks a ball with his shield
 #define ZOP_GND_SHIELD_DAMAGE 0x18
-// He hits the ball back when it is about this far from him (vanilla 150)
-#define ZOP_GND_RETURN_DIST 70.0f
+// He hits the ball back when it is about this far from him (as in vanilla: closer made fast balls fly through him)
+#define ZOP_GND_RETURN_DIST 150.0f
 // A ball he throws on the fly (not in a volley) and Link hits back starts a rally this often; otherwise it hits him
 #define ZOP_GND_FREE_BALL_RALLY 0.9f
 

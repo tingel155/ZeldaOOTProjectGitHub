@@ -107,6 +107,11 @@ extern "C" void ZOP_GndRallyGlow(int hits) {
     sTarget = std::clamp((float)hits / kFullGlowHits, 0.0f, 1.0f);
 }
 
+// Light the room up to a given haze level (1 = a full rally, more is brighter; 0 = fade back)
+extern "C" void ZOP_GndRallyLight(float level) {
+    sTarget = std::max(0.0f, level);
+}
+
 static void RegisterGanondrofRally() {
     COND_HOOK(OnPlayerUpdate, true, Tick);
 }

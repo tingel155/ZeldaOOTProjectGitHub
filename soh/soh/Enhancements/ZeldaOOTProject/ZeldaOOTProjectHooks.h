@@ -98,6 +98,8 @@ int ZOP_Phase2IntroStyle(void);
 
 // Phantom Ganon rallies (GanondrofRally.cpp): the room lights up with the number of hits so far (0 = fade out)
 void ZOP_GndRallyGlow(int hits);
+// ... or to a given haze level (1 = full rally, more is brighter, 0 = fade back)
+void ZOP_GndRallyLight(float level);
 // ... and flickers up brightly for a moment (hits in the lightning part of a rally, Phantom Ganon hit); strength 1 =
 // normal flash
 void ZOP_GndRallyFlash(float strength);

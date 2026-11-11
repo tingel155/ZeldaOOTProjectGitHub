@@ -787,6 +787,7 @@ static void BossGanondrof_ZopEndMotherBall(PlayState* play) {
                                             (s16)(Rand_ZeroOne() * 80.0f) + 120, FHGFLASH_LIGHTBALL_GREEN);
         }
         Audio_PlayActorSound2(sZopMotherBall, NA_SE_EN_FANTOM_THUNDER);
+        ZOP_GndRallyLight(0.0f);
         Actor_Kill(sZopMotherBall);
         sZopMotherBall = NULL;
     }
@@ -817,6 +818,11 @@ static void BossGanondrof_ZopFloorShots(BossGanondrof* this, PlayState* play) {
         this->flyMode = GND_FLY_NEUTRAL;
         this->timers[0] = 30;
         return;
+    }
+    // the big ball lights the whole room up in a bright, flickering haze
+    ZOP_GndRallyLight(1.5f);
+    if (Rand_ZeroOne() < 0.3f) {
+        ZOP_GndRallyFlash(0.15f + Rand_ZeroOne() * 0.45f);
     }
     // wait until it has arrived over the middle of the room
     if ((sZopShotsLeft > 0) && (Math_Vec3f_DistXYZ(&mother->world.pos, &motherTarget) > 25.0f)) {
