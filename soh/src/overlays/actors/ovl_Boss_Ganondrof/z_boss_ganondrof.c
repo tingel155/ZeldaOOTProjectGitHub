@@ -1198,9 +1198,18 @@ static void BossGanondrof_ZopAura(BossGanondrof* this, PlayState* play) {
 
 void BossGanondrof_SetupStunned(BossGanondrof* this, PlayState* play) {
     BossGanondrof_ZopEndMotherBall(play);
+    if ((this->actionFunc == BossGanondrof_Stunned) && sZopAuraPlanned && (sZopAuraTimer < 0) &&
+        (sZopAuraDelay < 0)) {
+        // ZeldaOOTProject: Link's first hit while he is down sets off the red aura, sometimes at once, sometimes a
+        // little later; he stays down long enough for it to burst
+        sZopAuraDelay = 1 + (s16)(Rand_ZeroOne() * 40.0f);
+        if (this->timers[0] < sZopAuraDelay + ZOP_AURA_FRAMES + 8) {
+            this->timers[0] = sZopAuraDelay + ZOP_AURA_FRAMES + 8;
+        }
+    }
     if (this->actionFunc != BossGanondrof_Stunned) {
         sZopAuraPlanned = ZOP_DifficultyEnabled() && (Rand_ZeroOne() < ZOP_AURA_CHANCE);
-        sZopAuraDelay = -1; // set when he lands
+        sZopAuraDelay = -1; // set by Link's first hit while he is down
         sZopAuraTimer = -1;
         this->fwork[GND_END_FRAME] = Animation_GetLastFrame(&gPhantomGanonAirDamageAnim);
         Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonAirDamageAnim, 0.0f);
@@ -1226,13 +1235,6 @@ void BossGanondrof_Stunned(BossGanondrof* this, PlayState* play) {
             this->fwork[GND_END_FRAME] = Animation_GetLastFrame(&gPhantomGanonStunnedAnim);
             Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonStunnedAnim, -10.0f);
             this->work[GND_ACTION_STATE] = STUNNED_GROUND;
-            if (sZopAuraPlanned && (sZopAuraTimer < 0) && (sZopAuraDelay < 0)) {
-                // ZeldaOOTProject: he stays down long enough for the aura to burst
-                sZopAuraDelay = 5 + (s16)(Rand_ZeroOne() * 20.0f);
-                if (this->timers[0] < sZopAuraDelay + ZOP_AURA_FRAMES + 8) {
-                    this->timers[0] = sZopAuraDelay + ZOP_AURA_FRAMES + 8;
-                }
-            }
         }
 
         this->actor.velocity.y = 0.0f;
