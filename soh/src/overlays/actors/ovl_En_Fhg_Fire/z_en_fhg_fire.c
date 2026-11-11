@@ -26,8 +26,10 @@
 #define ZOP_GND_BALL_DAMAGE 0x28
 // Damage of the shock Link gets when he blocks a ball with his shield
 #define ZOP_GND_SHIELD_DAMAGE 0x18
-// He hits the ball back when it is about this far from him (as in vanilla: closer made fast balls fly through him)
-#define ZOP_GND_RETURN_DIST 150.0f
+// He hits the ball back when it is about this far from him (vanilla 150). So that fast balls can't fly through him
+// before his swing lands, the ball slows down during his swing to arrive right in front of his staff
+#define ZOP_GND_RETURN_DIST 70.0f
+#define ZOP_SAVED_SPEED fwork[FHGFIRE_SCALE] // speed of the ball before he slowed it down for his swing
 // A ball he throws on the fly (not in a volley) and Link hits back starts a rally this often; otherwise it hits him
 #define ZOP_GND_FREE_BALL_RALLY 0.9f
 
@@ -924,6 +926,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                             this->work[FHGFIRE_FIRE_MODE] = FHGFIRE_LIGHT_REFLECT;
                             bossGnd->returnSuccess = true;
                             this->work[FHGFIRE_TIMER] = 8;
+                            this->ZOP_SAVED_SPEED = this->actor.speedXZ;
                         }
                     }
                 } else {
@@ -934,7 +937,10 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                         this->actor.world.rot.y = Math_FAtan2F(dxPG, dzPG) * (0x8000 / M_PI);
                         this->actor.world.rot.x = Math_FAtan2F(dyPG, sqrtf(SQ(dxPG) + SQ(dzPG))) * (0x8000 / M_PI);
                     }
-                    if ((fabsf(dxPG) < 30.0f) && (fabsf(dzPG) < 30.0f) && (fabsf(dyPG) < 45.0f)) {
+                    // (ZeldaOOTProject: also when a fast ball would pass through him within this frame)
+                    if (((fabsf(dxPG) < 30.0f) && (fabsf(dzPG) < 30.0f) && (fabsf(dyPG) < 45.0f)) ||
+                        (ZOP_DifficultyEnabled() && (this->work[FHGFIRE_RETURN_COUNT] >= 100) &&
+                         (sqrtf(SQ(dxPG) + SQ(dyPG) + SQ(dzPG)) < this->actor.speedXZ + 35.0f))) {
                         killMode = BALL_IMPACT;
                         bossGnd->returnCount = this->work[FHGFIRE_RETURN_COUNT] + 1;
                         if (ZOP_DifficultyEnabled()) {
@@ -986,6 +992,18 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                 break;
             }
             case FHGFIRE_LIGHT_REFLECT:
+                if (ZOP_DifficultyEnabled() && (this->ZOP_SAVED_SPEED > 0.0f)) {
+                    // ZeldaOOTProject: never faster than what takes it to just in front of him when his swing lands
+                    f32 left = sqrtf(SQ(dxPG) + SQ(dzPG)) - 40.0f;
+
+                    if (this->work[FHGFIRE_TIMER] == 0) {
+                        this->actor.speedXZ = this->ZOP_SAVED_SPEED;
+                        this->ZOP_SAVED_SPEED = 0.0f;
+                    } else {
+                        this->actor.speedXZ =
+                            CLAMP(left / this->work[FHGFIRE_TIMER], 0.0f, this->ZOP_SAVED_SPEED);
+                    }
+                }
                 if (this->work[FHGFIRE_TIMER] == 0) {
                     s16 i3;
                     Vec3f sp88;
