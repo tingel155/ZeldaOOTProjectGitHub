@@ -943,6 +943,24 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                     Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_FHG_FIRE, this->actor.world.pos.x,
                                        player->actor.world.pos.y + 20.0f, this->actor.world.pos.z, 0xC8, 0, 0,
                                        FHGFIRE_LIGHTNING_BURST);
+                } else if ((killMode == BALL_FIZZLE) && ZOP_IS_BURST_BALL &&
+                           (this->work[FHGFIRE_FIRE_MODE] == FHGFIRE_LIGHT_GREEN)) {
+                    // ZeldaOOTProject: a burst ball Link dodged hits the floor: a damaging lightning burst (like when it
+                    // hits Link) and shocks racing over the floor, fanned out around Link
+                    f32 groundY = (this->actor.floorHeight > BGCHECK_Y_MIN) ? this->actor.floorHeight
+                                                                             : this->actor.world.pos.y;
+                    s16 yawToLink = Math_Vec3f_Yaw(&this->actor.world.pos, &player->actor.world.pos);
+                    static const s16 sShockFan[] = { 0, -0x0C00, 0x0C00 };
+                    s16 i5;
+
+                    Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_FHG_FIRE, this->actor.world.pos.x,
+                                       groundY + 20.0f, this->actor.world.pos.z, 300, 0, 0, FHGFIRE_LIGHTNING_BURST);
+                    for (i5 = 0; i5 < ARRAY_COUNT(sShockFan); i5++) {
+                        Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_FHG_FIRE,
+                                           this->actor.world.pos.x, groundY + 20.0f, this->actor.world.pos.z, 0,
+                                           yawToLink + sShockFan[i5], 0, FHGFIRE_LIGHTNING_SHOCK);
+                    }
+                    ZOP_GndRallyFlash(0.5f);
                 }
                 bossGnd->flyMode = GND_FLY_NEUTRAL;
                 this->work[FHGFIRE_KILL_TIMER] = 30;
