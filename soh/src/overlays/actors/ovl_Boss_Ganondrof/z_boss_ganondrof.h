@@ -123,10 +123,11 @@ typedef struct BossGanondrof {
 #define GND_ZOP_BURST_BALL 1
 // Phase 2 health with ZeldaOOTProject difficulty (vanilla: 24)
 #define GND_ZOP_PHASE2_HEALTH 40
-// Power hit: now and then in a rally he raises his staff, it flashes and gets a purple aura, and his next return is
-// a lot faster
+// Power hit: now and then in a rally he raises his staff once, it flashes and gets a purple aura for the rest of the
+// rally, and his returns are a lot faster
 void BossGanondrof_ZopTryPowerUp(BossGanondrof* boss, PlayState* play, s16 rallyHits);
 s32 BossGanondrof_ZopUsePower(BossGanondrof* boss, PlayState* play);
+void BossGanondrof_ZopEndPower(void);
 s32 BossGanondrof_ZopTryCatch(BossGanondrof* boss, PlayState* play, s16 rallyHits);
 void BossGanondrof_ZopAbsorbed(BossGanondrof* boss, PlayState* play);
 

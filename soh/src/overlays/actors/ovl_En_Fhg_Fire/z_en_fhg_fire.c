@@ -18,7 +18,8 @@
 #define ZOP_GND_LINK_SPEEDUP 1.0f
 #define ZOP_GND_PHANTOM_SPEEDUP 2.0f
 #define ZOP_GND_MAX_SPEED 20.0f
-#define ZOP_GND_POWER_SPEEDUP 5.0f
+#define ZOP_GND_POWER_SPEEDUP 5.0f       // his first return with the charged staff
+#define ZOP_GND_POWER_SPEEDUP_MORE 2.0f  // each one after that in the same rally
 #define ZOP_GND_POWER_MAX_SPEED 28.0f
 #define ZOP_POWER_HITS actor.home.rot.z // power hits this ball has taken (raise its top speed)
 // Damage of a ball that hits Link (vanilla 0x10)
@@ -900,6 +901,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                     }
                     ZOP_GndRallyGlow(0);
                     ZOP_GndRallyRain(false);
+                    BossGanondrof_ZopEndPower();
                     this->actor.draw = NULL;
                     this->work[FHGFIRE_KILL_TIMER] = 30;
                     BossGanondrof_ZopAbsorbed(bossGnd, play);
@@ -932,7 +934,8 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                     }
                     this->actor.speedXZ += ZOP_DifficultyEnabled() ? ZOP_GND_PHANTOM_SPEEDUP : 2.0f;
                     if (ZOP_DifficultyEnabled() && BossGanondrof_ZopUsePower(bossGnd, play)) {
-                        this->actor.speedXZ += ZOP_GND_POWER_SPEEDUP;
+                        this->actor.speedXZ +=
+                            (this->ZOP_POWER_HITS == 0) ? ZOP_GND_POWER_SPEEDUP : ZOP_GND_POWER_SPEEDUP_MORE;
                         this->ZOP_POWER_HITS++;
                     }
                 }
@@ -986,6 +989,9 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                 bossGnd->flyMode = GND_FLY_NEUTRAL;
                 this->work[FHGFIRE_KILL_TIMER] = 30;
                 ZOP_GndRallyGlow(0);
+                if (!ZOP_IS_BURST_BALL) {
+                    BossGanondrof_ZopEndPower(); // rally over: his staff loses its aura
+                }
                 // Only the end of a real rally stops the rain (not a free ball popping on Link's shield); it then
                 // dies down slowly
                 if (this->ZOP_RALLY_HITS > 0) {

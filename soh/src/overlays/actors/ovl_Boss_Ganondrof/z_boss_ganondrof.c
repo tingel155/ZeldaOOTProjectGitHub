@@ -213,7 +213,8 @@ void BossGanondrof_SetColliderPos(Vec3f* pos, ColliderCylinder* collider) {
 }
 
 static s16 sZopBurstCooldown; // catch-and-burst attack, see below
-static s16 sZopPowerTimer;     // power hit, see below
+static s16 sZopPowerTimer;     // power hit, see below (> 0: staff charged for the rest of the rally)
+static s16 sZopPowerRaised;    // staff still held up (until his first charged return)
 static s16 sZopPowerFlashTimer; // lens flare on the staff when it gets charged
 #define ZOP_POWER_FLASH_FRAMES 12
 
@@ -226,6 +227,7 @@ void BossGanondrof_Init(Actor* thisx, PlayState* play) {
     Actor_SetScale(&this->actor, 0.01f);
     sZopBurstCooldown = 200;
     sZopPowerTimer = 0;
+    sZopPowerRaised = false;
     sZopPowerFlashTimer = 0;
     SkelAnime_Init(play, &this->skelAnime, &gPhantomGanonSkel, &gPhantomGanonRideAnim, NULL, NULL, 0);
     if (this->actor.params < GND_FAKE_BOSS) {
@@ -463,9 +465,10 @@ static s16 sZopBurstTimer;
 static void BossGanondrof_ZopBurst(BossGanondrof* this, PlayState* play);
 
 // ---------- ZeldaOOTProject: power hit
+#define ZOP_CHARGE_CHANCE 0.35f // chance of his charge attack whenever he picks his next move
+
 #define ZOP_POWER_MIN_HITS 2   // rally hits before he may charge his staff
 #define ZOP_POWER_CHANCE 0.3f  // chance per return of Link's
-#define ZOP_POWER_FRAMES 150   // the charge fades if he doesn't get to use it
 
 
 static void BossGanondrof_ZopPurpleSparks(BossGanondrof* this, PlayState* play, s16 count, f32 spread, f32 speed) {
@@ -491,7 +494,8 @@ void BossGanondrof_ZopTryPowerUp(BossGanondrof* this, PlayState* play, s16 rally
         (Rand_ZeroOne() > ZOP_POWER_CHANCE)) {
         return;
     }
-    sZopPowerTimer = ZOP_POWER_FRAMES;
+    sZopPowerTimer = 1;
+    sZopPowerRaised = true;
     // The staff goes up (see BossGanondrof_Update) and flashes once
     Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_FHG_FIRE, this->spearTip.x, this->spearTip.y,
                        this->spearTip.z, 8, FHGFIRE_LIGHT_GREEN, 0, FHGFIRE_SPEAR_LIGHT);
@@ -504,19 +508,25 @@ void BossGanondrof_ZopTryPowerUp(BossGanondrof* this, PlayState* play, s16 rally
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_MASIC1);
 }
 
-// His return: uses up the charge; true if it was charged
+// His return: true if his staff is charged (it stays charged until the rally is over)
 s32 BossGanondrof_ZopUsePower(BossGanondrof* this, PlayState* play) {
     if (sZopPowerTimer <= 0) {
         return false;
     }
-    sZopPowerTimer = 0;
+    sZopPowerRaised = false;
     BossGanondrof_ZopPurpleSparks(this, play, 30, 10.0f, 16.0f);
     ZOP_GndRallyFlash(0.9f);
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_THUNDER);
     return true;
 }
 
-// Each frame: holds the staff up with a purple aura while charged
+// The rally is over (the ball is gone): the aura goes
+void BossGanondrof_ZopEndPower(void) {
+    sZopPowerTimer = 0;
+    sZopPowerRaised = false;
+}
+
+// Each frame: the purple aura while charged (and the staff held up until his first charged return)
 static void BossGanondrof_ZopPowerUpdate(BossGanondrof* this, PlayState* play) {
     static Color_RGBA8 boltPrim = { 255, 220, 255, 255 };
     static Color_RGBA8 boltEnv = { 170, 40, 255, 255 };
@@ -525,11 +535,10 @@ static void BossGanondrof_ZopPowerUpdate(BossGanondrof* this, PlayState* play) {
         return;
     }
     if ((this->actionFunc != BossGanondrof_Neutral) && (this->actionFunc != BossGanondrof_Return)) {
-        sZopPowerTimer = 0; // stunned, catching the ball, ...
+        BossGanondrof_ZopEndPower(); // stunned, catching the ball, ...
         return;
     }
-    sZopPowerTimer--;
-    if ((this->actionFunc == BossGanondrof_Neutral) &&
+    if (sZopPowerRaised && (this->actionFunc == BossGanondrof_Neutral) &&
         (this->skelAnime.animation != &gPhantomGanonChargeWindupAnim)) {
         Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonChargeWindupAnim, -4.0f);
     }
@@ -715,7 +724,13 @@ void BossGanondrof_Neutral(BossGanondrof* this, PlayState* play) {
             if (this->timers[0] == 0) {
                 this->timers[0] = (s16)(Rand_ZeroOne() * 64.0f) + 30;
                 rand01 = Rand_ZeroOne();
-                if (thisx->colChkInfo.health < 5) {
+                if (ZOP_DifficultyEnabled() && (rand01 < ZOP_CHARGE_CHANCE)) {
+                    // ZeldaOOTProject: he flies at Link a lot more often (vanilla: only below 5 health)
+                    this->flyMode = GND_FLY_CHARGE;
+                    this->timers[0] = 60;
+                    this->fwork[GND_FLOAT_SPEED] = 0.0f;
+                    Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_LAUGH);
+                } else if (thisx->colChkInfo.health < 5) {
                     if (rand01 < 0.25f) {
                         BossGanondrof_SetupThrow(this, play);
                     } else if (rand01 >= 0.8f) {
@@ -1771,7 +1786,7 @@ void BossGanondrof_Draw(Actor* thisx, PlayState* play) {
     osSyncPrintf("DRAW 22\n");
     POLY_OPA_DISP = Play_SetFog(play, POLY_OPA_DISP);
 
-    // ZeldaOOTProject: power hit charged, a short purple lens flare on the staff (like Gohma's eye flash): a round
+    // ZeldaOOTProject: power hit charged, a short light blue lens flare on the staff (like Gohma's eye flash): a round
     // glow and a wide horizontal streak
     if ((sZopPowerFlashTimer > 0) && (this->actor.params == GND_REAL_BOSS)) {
         f32 t = (f32)sZopPowerFlashTimer / ZOP_POWER_FLASH_FRAMES; // 1 -> 0
@@ -1779,8 +1794,8 @@ void BossGanondrof_Draw(Actor* thisx, PlayState* play) {
         u8 alpha = (u8)(255.0f * CLAMP(t * 1.6f, 0.0f, 1.0f));
 
         Gfx_SetupDL_25Xlu(play->state.gfxCtx);
-        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0x80, 255, 235, 255, alpha);
-        gDPSetEnvColor(POLY_XLU_DISP++, 190, 80, 255, 0);
+        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0x80, 255, 255, 255, alpha);
+        gDPSetEnvColor(POLY_XLU_DISP++, 140, 230, 255, 0);
         Matrix_Translate(this->spearTip.x, this->spearTip.y, this->spearTip.z, MTXMODE_NEW);
         Matrix_Mult(&play->billboardMtxF, MTXMODE_APPLY);
         Matrix_Push();
