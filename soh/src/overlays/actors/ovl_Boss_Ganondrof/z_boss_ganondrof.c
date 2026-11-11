@@ -212,6 +212,7 @@ void BossGanondrof_SetColliderPos(Vec3f* pos, ColliderCylinder* collider) {
 }
 
 static s16 sZopBurstCooldown; // catch-and-burst attack, see below
+static s16 sZopPowerTimer;     // power hit, see below
 
 void BossGanondrof_Init(Actor* thisx, PlayState* play) {
     s32 pad;
@@ -221,6 +222,7 @@ void BossGanondrof_Init(Actor* thisx, PlayState* play) {
     ActorShape_Init(&this->actor.shape, 0.0f, NULL, 0.0f);
     Actor_SetScale(&this->actor, 0.01f);
     sZopBurstCooldown = 200;
+    sZopPowerTimer = 0;
     SkelAnime_Init(play, &this->skelAnime, &gPhantomGanonSkel, &gPhantomGanonRideAnim, NULL, NULL, 0);
     if (this->actor.params < GND_FAKE_BOSS) {
         this->actor.params = GND_REAL_BOSS;
@@ -455,6 +457,85 @@ static s16 sZopBurstState;
 static s16 sZopBurstTimer;
 
 static void BossGanondrof_ZopBurst(BossGanondrof* this, PlayState* play);
+
+// ---------- ZeldaOOTProject: power hit
+#define ZOP_POWER_MIN_HITS 2   // rally hits before he may charge his staff
+#define ZOP_POWER_CHANCE 0.3f  // chance per return of Link's
+#define ZOP_POWER_FRAMES 150   // the charge fades if he doesn't get to use it
+
+
+static void BossGanondrof_ZopPurpleSparks(BossGanondrof* this, PlayState* play, s16 count, f32 spread, f32 speed) {
+    static Color_RGBA8 prim = { 255, 200, 255, 255 };
+    static Color_RGBA8 env = { 170, 40, 255, 255 };
+    Vec3f accel = { 0.0f, 0.0f, 0.0f };
+    s16 i;
+
+    for (i = 0; i < count; i++) {
+        Vec3f pos = { this->spearTip.x + Rand_CenteredFloat(spread), this->spearTip.y + Rand_CenteredFloat(spread),
+                      this->spearTip.z + Rand_CenteredFloat(spread) };
+        Vec3f vel = { Rand_CenteredFloat(speed), Rand_CenteredFloat(speed) + speed * 0.3f, Rand_CenteredFloat(speed) };
+
+        EffectSsKiraKira_SpawnDispersed(play, &pos, &vel, &accel, &prim, &env, 2500, 12);
+    }
+}
+
+void BossGanondrof_ZopTryPowerUp(BossGanondrof* this, PlayState* play, s16 rallyHits) {
+    EnfHG* horse = (EnfHG*)this->actor.child;
+
+    if (!ZOP_DifficultyEnabled() || (sZopPowerTimer > 0) || (rallyHits < ZOP_POWER_MIN_HITS) ||
+        ((this->actionFunc != BossGanondrof_Neutral) && (this->actionFunc != BossGanondrof_Return)) ||
+        (Rand_ZeroOne() > ZOP_POWER_CHANCE)) {
+        return;
+    }
+    sZopPowerTimer = ZOP_POWER_FRAMES;
+    // The staff goes up (see BossGanondrof_Update) and flashes once
+    Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_FHG_FIRE, this->spearTip.x, this->spearTip.y,
+                       this->spearTip.z, 8, FHGFIRE_LIGHT_GREEN, 0, FHGFIRE_SPEAR_LIGHT);
+    this->actor.child = &horse->actor;
+    BossGanondrof_ZopPurpleSparks(this, play, 24, 20.0f, 10.0f);
+    ZOP_GndRallyFlash(0.5f);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_STICK);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_MASIC1);
+}
+
+// His return: uses up the charge; true if it was charged
+s32 BossGanondrof_ZopUsePower(BossGanondrof* this, PlayState* play) {
+    if (sZopPowerTimer <= 0) {
+        return false;
+    }
+    sZopPowerTimer = 0;
+    BossGanondrof_ZopPurpleSparks(this, play, 30, 10.0f, 16.0f);
+    ZOP_GndRallyFlash(0.9f);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_THUNDER);
+    return true;
+}
+
+// Each frame: holds the staff up with a purple aura while charged
+static void BossGanondrof_ZopPowerUpdate(BossGanondrof* this, PlayState* play) {
+    static Color_RGBA8 boltPrim = { 255, 220, 255, 255 };
+    static Color_RGBA8 boltEnv = { 170, 40, 255, 255 };
+
+    if (sZopPowerTimer <= 0) {
+        return;
+    }
+    if ((this->actionFunc != BossGanondrof_Neutral) && (this->actionFunc != BossGanondrof_Return)) {
+        sZopPowerTimer = 0; // stunned, catching the ball, ...
+        return;
+    }
+    sZopPowerTimer--;
+    if ((this->actionFunc == BossGanondrof_Neutral) &&
+        (this->skelAnime.animation != &gPhantomGanonChargeWindupAnim)) {
+        Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonChargeWindupAnim, -4.0f);
+    }
+    BossGanondrof_ZopPurpleSparks(this, play, 2, 50.0f, 2.0f);
+    if ((this->work[GND_VARIANCE_TIMER] % 3) == 0) {
+        Vec3f pos = { this->spearTip.x + Rand_CenteredFloat(30.0f), this->spearTip.y + Rand_CenteredFloat(30.0f),
+                      this->spearTip.z + Rand_CenteredFloat(30.0f) };
+
+        EffectSsLightning_Spawn(play, &pos, &boltPrim, &boltEnv, (s16)(30.0f + Rand_ZeroOne() * 25.0f),
+                                (s16)(Rand_ZeroOne() * 0xFFFF), 4, 1);
+    }
+}
 
 s32 BossGanondrof_ZopTryCatch(BossGanondrof* this, PlayState* play, s16 rallyHits) {
     if (!ZOP_DifficultyEnabled() || (sZopBurstCooldown > 0) || (rallyHits < ZOP_BURST_MIN_HITS) ||
@@ -1444,6 +1525,9 @@ void BossGanondrof_Update(Actor* thisx, PlayState* play) {
     if (sZopBurstCooldown > 0) {
         sZopBurstCooldown--;
     }
+    if (this->actor.params == GND_REAL_BOSS) {
+        BossGanondrof_ZopPowerUpdate(this, play);
+    }
     osSyncPrintf("MOVE START %d\n", this->actor.params);
     this->actor.flags &= ~ACTOR_FLAG_HOOKSHOT_PULLS_PLAYER;
     this->colliderBody.base.colType = COLTYPE_HIT3;
@@ -1519,8 +1603,14 @@ void BossGanondrof_Update(Actor* thisx, PlayState* play) {
     }
 
     if (this->actor.params == GND_REAL_BOSS) {
-        Lights_PointNoGlowSetInfo(&this->lightInfo, this->spearTip.x, this->spearTip.y, this->spearTip.z, 255, 255, 255,
-                                  200);
+        if (sZopPowerTimer > 0) {
+            // purple light from the charged staff
+            Lights_PointNoGlowSetInfo(&this->lightInfo, this->spearTip.x, this->spearTip.y, this->spearTip.z, 200, 90,
+                                      255, 300);
+        } else {
+            Lights_PointNoGlowSetInfo(&this->lightInfo, this->spearTip.x, this->spearTip.y, this->spearTip.z, 255,
+                                      255, 255, 200);
+        }
     }
 }
 

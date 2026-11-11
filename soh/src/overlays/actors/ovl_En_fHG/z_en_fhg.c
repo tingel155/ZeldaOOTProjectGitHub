@@ -626,6 +626,9 @@ void EnfHG_Damage(EnfHG* this, PlayState* play) {
             this->bossGndSignal = FHG_RIDE;
         } else {
             bossGnd->flyMode = GND_FLY_NEUTRAL;
+            if (ZOP_DifficultyEnabled()) {
+                bossGnd->actor.colChkInfo.health = GND_ZOP_PHASE2_HEALTH; // a longer second phase
+            }
         }
         this->turnTarget = -0x8000;
     }
@@ -696,7 +699,7 @@ void EnfHG_Update(Actor* thisx, PlayState* play) {
         (this->actor.parent != NULL)) {
         BossGanondrof* bossGnd = (BossGanondrof*)this->actor.parent;
 
-        bossGnd->actor.colChkInfo.health = 24;
+        bossGnd->actor.colChkInfo.health = ZOP_DifficultyEnabled() ? GND_ZOP_PHASE2_HEALTH : 24;
         bossGnd->flyMode = GND_FLY_NEUTRAL;
         this->actionFunc = EnfHG_Done;
         this->actor.draw = NULL;

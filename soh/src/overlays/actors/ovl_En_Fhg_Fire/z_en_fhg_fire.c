@@ -12,14 +12,17 @@
 #include "overlays/effects/ovl_Effect_Ss_Fhg_Flash/z_eff_ss_fhg_flash.h"
 #include "soh/Enhancements/ZeldaOOTProject/ZeldaOOTProjectHooks.h"
 
-// ZeldaOOTProject: Phantom Ganon's tennis gets longer and faster. He can only miss from his 6th return on (30% each
-// time, for sure from the 9th), and every hit speeds the ball up.
-#define ZOP_GND_MIN_RETURNS 5
-#define ZOP_GND_MISS_CHANCE 0.3f
-#define ZOP_GND_SURE_MISS 9
-#define ZOP_GND_LINK_SPEEDUP 0.7f
-#define ZOP_GND_PHANTOM_SPEEDUP 1.0f
+// ZeldaOOTProject: Phantom Ganon's tennis gets longer in the course of the fight. At first he misses about as early as
+// in the original, with every bit of health he loses he keeps it up longer (see EnFhgFire_ZopMisses). The ball speeds
+// up as in the original, except for his power hits (staff raised, purple aura), which are a lot faster.
+#define ZOP_GND_LINK_SPEEDUP 1.0f
+#define ZOP_GND_PHANTOM_SPEEDUP 2.0f
 #define ZOP_GND_MAX_SPEED 20.0f
+#define ZOP_GND_POWER_SPEEDUP 5.0f
+#define ZOP_GND_POWER_MAX_SPEED 28.0f
+#define ZOP_POWER_HITS actor.home.rot.z // power hits this ball has taken (raise its top speed)
+// Damage of a ball that hits Link (vanilla 0x10)
+#define ZOP_GND_BALL_DAMAGE 0x18
 // A ball he throws on the fly (not in a volley) and Link hits back starts a rally this often; otherwise it hits him
 #define ZOP_GND_FREE_BALL_RALLY 0.9f
 
@@ -586,6 +589,17 @@ void EnFhgFire_SpearLight(EnFhgFire* this, PlayState* play) {
     }
 }
 
+// Does Phantom Ganon miss this return (returnCount = Link's returns so far)? Early in phase 2: possible from the 3rd on
+// (50%), for sure from the 4th; at the end: from the 9th (30%), for sure from the 12th.
+static s32 EnFhgFire_ZopMisses(BossGanondrof* bossGnd, s16 returnCount) {
+    f32 p = CLAMP(1.0f - (s8)bossGnd->actor.colChkInfo.health / (f32)GND_ZOP_PHASE2_HEALTH, 0.0f, 1.0f);
+    s16 minReturns = 2 + (s16)(p * 6.0f + 0.5f);
+    s16 sureMiss = 4 + (s16)(p * 8.0f + 0.5f);
+    f32 chance = 0.5f - 0.2f * p;
+
+    return (returnCount >= sureMiss) || ((returnCount > minReturns) && (Rand_ZeroOne() < chance));
+}
+
 /**
  * ZeldaOOTProject: a ball of Phantom Ganon's burst. It closes in on Link and only a spin attack or Nayru's Love sends it
  * back, and then it hits Phantom Ganon for sure. Shield and normal slashes don't help. Returns the kill mode.
@@ -646,7 +660,8 @@ static u8 EnFhgFire_ZopBurstBall(EnFhgFire* this, PlayState* play, BossGanondrof
     }
     if (dist <= 25.0f) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_HIT_THUNDER);
-        Actor_SetPlayerKnockback(play, &this->actor, 3.0f, this->actor.world.rot.y, 0.0f, 3, 0x10);
+        Actor_SetPlayerKnockback(play, &this->actor, 3.0f, this->actor.world.rot.y, 0.0f, 3,
+                                             ZOP_DifficultyEnabled() ? ZOP_GND_BALL_DAMAGE : 0x10);
         return BALL_BURST;
     }
     return BALL_FIZZLE;
@@ -771,9 +786,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                             angleModY = 0;
                             this->work[FHGFIRE_RETURN_COUNT]++;
                             if (ZOP_DifficultyEnabled()) {
-                                if ((this->work[FHGFIRE_RETURN_COUNT] >= ZOP_GND_SURE_MISS) ||
-                                    ((this->work[FHGFIRE_RETURN_COUNT] > ZOP_GND_MIN_RETURNS) &&
-                                     (Rand_ZeroOne() < ZOP_GND_MISS_CHANCE))) {
+                                if (EnFhgFire_ZopMisses(bossGnd, this->work[FHGFIRE_RETURN_COUNT])) {
                                     this->work[FHGFIRE_RETURN_COUNT] = 100;
                                 }
                                 // A spin attack hits it back harder, but no longer shortens the rally
@@ -802,6 +815,9 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                         if (ZOP_DifficultyEnabled()) {
                             EnFhgFire_ZopRallyHit(this, play, bossGnd->targetPos.x, bossGnd->targetPos.y,
                                                   bossGnd->targetPos.z);
+                            if (this->work[FHGFIRE_RETURN_COUNT] < 100) {
+                                BossGanondrof_ZopTryPowerUp(bossGnd, play, this->ZOP_RALLY_HITS);
+                            }
                         }
                         Audio_PlaySfxGeneral(NA_SE_IT_SWORD_REFLECT_MG, &player->actor.projectedPos, 4,
                                              &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
@@ -814,7 +830,8 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                     if ((bossGnd->flyMode >= GND_FLY_VOLLEY) && (this->work[FHGFIRE_RETURN_COUNT] >= 2)) {
                         Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_LAUGH);
                     }
-                    Actor_SetPlayerKnockback(play, &this->actor, 3.0f, this->actor.world.rot.y, 0.0f, 3, 0x10);
+                    Actor_SetPlayerKnockback(play, &this->actor, 3.0f, this->actor.world.rot.y, 0.0f, 3,
+                                             ZOP_DifficultyEnabled() ? ZOP_GND_BALL_DAMAGE : 0x10);
                 }
                 break;
             case FHGFIRE_LIGHT_BLUE:
@@ -914,6 +931,10 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                                               player->actor.world.pos.z);
                     }
                     this->actor.speedXZ += ZOP_DifficultyEnabled() ? ZOP_GND_PHANTOM_SPEEDUP : 2.0f;
+                    if (ZOP_DifficultyEnabled() && BossGanondrof_ZopUsePower(bossGnd, play)) {
+                        this->actor.speedXZ += ZOP_GND_POWER_SPEEDUP;
+                        this->ZOP_POWER_HITS++;
+                    }
                 }
                 break;
         }
@@ -984,8 +1005,15 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
         }
         Lights_PointNoGlowSetInfo(&this->lightInfo, (s16)this->actor.world.pos.x, (s16)this->actor.world.pos.y,
                                   (s16)this->actor.world.pos.z, 255, 255, 255, 200);
-        if (this->actor.speedXZ > (ZOP_DifficultyEnabled() ? ZOP_GND_MAX_SPEED : 20.0f)) {
-            this->actor.speedXZ = ZOP_DifficultyEnabled() ? ZOP_GND_MAX_SPEED : 20.0f;
+        {
+            f32 maxSpeed = ZOP_DifficultyEnabled()
+                               ? CLAMP_MAX(ZOP_GND_MAX_SPEED + this->ZOP_POWER_HITS * ZOP_GND_POWER_SPEEDUP,
+                                           ZOP_GND_POWER_MAX_SPEED)
+                               : 20.0f;
+
+            if (this->actor.speedXZ > maxSpeed) {
+                this->actor.speedXZ = maxSpeed;
+            }
         }
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_FIRE - SFX_FLAG);
         // "Why ah ah ah ah"
