@@ -217,6 +217,16 @@ static s16 sZopPowerTimer;     // power hit, see below (> 0: staff charged for t
 static s16 sZopPowerRaised;    // staff still held up (until his first charged return)
 static s16 sZopPowerFlashTimer; // lens flare on the staff when it gets charged
 static s16 sZopChargesLeft;     // charge attack: more charges to come in this series
+// Counterattack while he lies stunned on the floor: a red aura builds up (faster and faster pulses, rising hum) and
+// bursts into a small shockwave that hurts Link and throws him back
+static u8 sZopAuraPlanned;  // this stun will have one
+static s16 sZopAuraDelay;   // frames on the floor before it starts
+static s16 sZopAuraTimer;   // -1: none, else frames into it
+static u8 sZopAuraRed;      // red pulse on his body this frame
+#define ZOP_AURA_CHANCE 0.5f
+#define ZOP_AURA_FRAMES 40
+#define ZOP_AURA_RADIUS 150.0f
+#define ZOP_AURA_DAMAGE 0x18
 #define ZOP_GND_CHARGE_DAMAGE 0x28
 #define ZOP_CHARGE_SPEED 18.0f   // vanilla 10
 #define ZOP_CHARGE_REWINDUP 12   // wind-up frames between two charges of a series
@@ -971,8 +981,85 @@ void BossGanondrof_Return(BossGanondrof* this, PlayState* play) {
     }
 }
 
+// ZeldaOOTProject: the red aura on the floor and its shockwave
+static void BossGanondrof_ZopAura(BossGanondrof* this, PlayState* play) {
+    static f32 sHumFreq;
+    static f32 sHumVolume = 1.0f;
+    static s8 sHumReverb = 0;
+    static Color_RGBA8 prim = { 255, 120, 80, 255 };
+    static Color_RGBA8 env = { 255, 0, 0, 255 };
+    Player* player = GET_PLAYER(play);
+    f32 intensity;
+    s16 period;
+    s16 i;
+
+    if (sZopAuraTimer < 0) {
+        if (sZopAuraDelay > 0) {
+            sZopAuraDelay--;
+            return;
+        }
+        sZopAuraTimer = 0;
+        if (this->timers[0] < ZOP_AURA_FRAMES + 5) {
+            this->timers[0] = ZOP_AURA_FRAMES + 5; // he stays down until it bursts
+        }
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_VOICE);
+    }
+    if (sZopAuraTimer > ZOP_AURA_FRAMES) {
+        return;
+    }
+    intensity = (f32)sZopAuraTimer / ZOP_AURA_FRAMES;
+
+    // red sparks rising around him, more and more of them
+    for (i = 0; i < 1 + (s16)(intensity * 5.0f); i++) {
+        f32 ang = Rand_ZeroOne() * 2.0f * M_PI;
+        f32 r = 30.0f + Rand_ZeroOne() * (30.0f + intensity * 40.0f);
+        Vec3f pos = { this->actor.world.pos.x + sinf(ang) * r, this->actor.world.pos.y + Rand_ZeroOne() * 90.0f,
+                      this->actor.world.pos.z + cosf(ang) * r };
+        Vec3f vel = { 0.0f, 1.5f + intensity * 3.0f, 0.0f };
+        Vec3f accel = { 0.0f, 0.1f, 0.0f };
+
+        EffectSsKiraKira_SpawnDispersed(play, &pos, &vel, &accel, &prim, &env, 2500 + (s16)(intensity * 2500.0f),
+                                        14);
+    }
+    // his body pulses red, faster and faster
+    period = 12 - (s16)(intensity * 10.0f);
+    sZopAuraRed = (sZopAuraTimer % period) < (period / 2 + 1);
+    // a rising hum (the charging shield of the Twinrova fight, has to be triggered every frame)
+    sHumFreq = 0.6f + intensity * 1.1f;
+    Audio_PlaySfxGeneral((intensity < 0.5f) ? (NA_SE_IT_SHIELD_CHARGE_LV1 & ~SFX_FLAG)
+                                            : (NA_SE_IT_SHIELD_CHARGE_LV2 & ~SFX_FLAG),
+                         &this->actor.projectedPos, 4, &sHumFreq, &sHumVolume, &sHumReverb);
+
+    if (sZopAuraTimer == ZOP_AURA_FRAMES) {
+        // the shockwave
+        f32 dx = player->actor.world.pos.x - this->actor.world.pos.x;
+        f32 dz = player->actor.world.pos.z - this->actor.world.pos.z;
+
+        sZopAuraRed = false;
+        Actor_Spawn(&play->actorCtx, play, ACTOR_EN_FHG_FIRE, this->actor.world.pos.x, this->actor.world.pos.y + 20.0f,
+                    this->actor.world.pos.z, 250, 0, 0, FHGFIRE_LIGHTNING_BURST);
+        ZOP_SpawnGndRing(play, this->actor.world.pos.x, this->actor.world.pos.y - 38.0f, this->actor.world.pos.z,
+                         ZOP_AURA_RADIUS + 40.0f, 14.0f);
+        if ((SQ(dx) + SQ(dz) < SQ(ZOP_AURA_RADIUS)) && (player->invincibilityTimer == 0) &&
+            (gSaveContext.nayrusLoveTimer == 0)) {
+            Actor_SetPlayerKnockback(play, &this->actor, 10.0f, (s16)(Math_FAtan2F(dx, dz) * (0x8000 / M_PI)), 7.0f,
+                                     PLAYER_KNOCKBACK_LARGE, ZOP_AURA_DAMAGE);
+        }
+        ZOP_GndRallyFlash(1.0f);
+        Actor_RequestQuakeAndRumble(&this->actor, play, 5, 10);
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_HIT_THUNDER);
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_THUNDER_GND);
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_LAUGH);
+        this->timers[0] = 12; // and up he gets
+    }
+    sZopAuraTimer++;
+}
+
 void BossGanondrof_SetupStunned(BossGanondrof* this, PlayState* play) {
     if (this->actionFunc != BossGanondrof_Stunned) {
+        sZopAuraPlanned = ZOP_DifficultyEnabled() && (Rand_ZeroOne() < ZOP_AURA_CHANCE);
+        sZopAuraDelay = 10 + (s16)(Rand_ZeroOne() * 40.0f);
+        sZopAuraTimer = -1;
         this->fwork[GND_END_FRAME] = Animation_GetLastFrame(&gPhantomGanonAirDamageAnim);
         Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonAirDamageAnim, 0.0f);
         this->timers[0] = 50;
@@ -1003,6 +1090,9 @@ void BossGanondrof_Stunned(BossGanondrof* this, PlayState* play) {
         this->actor.gravity = 0.0f;
         if (Animation_OnFrame(&this->skelAnime, this->fwork[GND_END_FRAME])) {
             Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_DAMAGE2);
+        }
+        if (sZopAuraPlanned) {
+            BossGanondrof_ZopAura(this, play);
         }
 
         this->actor.flags |= ACTOR_FLAG_HOOKSHOT_PULLS_PLAYER;
@@ -2010,7 +2100,8 @@ void BossGanondrof_Draw(Actor* thisx, PlayState* play) {
 
     osSyncPrintf("YP %f\n", this->actor.world.pos.y);
     Gfx_SetupDL_25Opa(play->state.gfxCtx);
-    if (this->work[GND_INVINC_TIMER] & 4) {
+    if ((this->work[GND_INVINC_TIMER] & 4) ||
+        (sZopAuraRed && (this->actionFunc == BossGanondrof_Stunned) && (sZopAuraTimer >= 0))) {
         POLY_OPA_DISP = Gfx_SetFog(POLY_OPA_DISP, 255, 50, 0, 0, 900, 1099);
     } else {
         POLY_OPA_DISP = Gfx_SetFog(POLY_OPA_DISP, (u32)horse->warpColorFilterR, (u32)horse->warpColorFilterG,

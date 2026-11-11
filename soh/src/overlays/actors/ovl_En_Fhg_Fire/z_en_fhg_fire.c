@@ -24,6 +24,8 @@
 #define ZOP_POWER_HITS actor.home.rot.z // power hits this ball has taken (raise its top speed)
 // Damage of a ball that hits Link (vanilla 0x10)
 #define ZOP_GND_BALL_DAMAGE 0x28
+// Damage of the shock Link gets when he blocks a ball with his shield
+#define ZOP_GND_SHIELD_DAMAGE 0x18
 // He hits the ball back when it is about this far from him (vanilla 150)
 #define ZOP_GND_RETURN_DIST 70.0f
 // A ball he throws on the fly (not in a volley) and Link hits back starts a rally this often; otherwise it hits him
@@ -764,6 +766,13 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                                              &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
                                              &gSfxDefaultReverb);
                         Rumble_Request(this->actor.xyzDistToPlayerSq, 0xFF, 0x14, 0x96);
+                        if (ZOP_DifficultyEnabled() && (player->invincibilityTimer == 0)) {
+                            // ZeldaOOTProject: the ball is electric and the shield is steel: blocking it gives Link a
+                            // shock (thrown back, electrified, damage)
+                            Actor_SetPlayerKnockback(play, &this->actor, 4.0f, this->actor.world.rot.y, 4.0f,
+                                                     PLAYER_KNOCKBACK_LARGE_ELECTRIFIED, ZOP_GND_SHIELD_DAMAGE);
+                            Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_HIT_THUNDER);
+                        }
                     } else {
                         if (bossGnd->flyMode == GND_FLY_NEUTRAL) {
                             if (ZOP_DifficultyEnabled()) {
