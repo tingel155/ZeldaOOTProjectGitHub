@@ -131,6 +131,12 @@ s32 BossGanondrof_ZopBurstReturns(BossGanondrof* boss);
 void BossGanondrof_SetupReturn(BossGanondrof* boss, PlayState* play);
 // Phase 2 health with ZeldaOOTProject difficulty (vanilla: 24)
 #define GND_ZOP_PHASE2_HEALTH 56
+// Phase 1.5 (the original second phase, as in vanilla) ends at this health (30% lost); a cutscene (he falls, kneels,
+// trembles with electricity and breaks loose with a hail of balls) starts the hard phase 2 with all the changes
+#define GND_ZOP_PHASEB_HEALTH 39
+s32 BossGanondrof_ZopPhaseB(void);
+// The balls of that outburst: only for show, they fly off and burst
+#define GND_ZOP_SHOW_BALL 4
 // Power hit: now and then in a rally he raises his staff once, it flashes and gets a purple aura for the rest of the
 // rally, and his returns are a lot faster
 void BossGanondrof_ZopTryPowerUp(BossGanondrof* boss, PlayState* play, s16 rallyHits);

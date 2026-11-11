@@ -699,7 +699,12 @@ void EnfHG_Update(Actor* thisx, PlayState* play) {
         (this->actor.parent != NULL)) {
         BossGanondrof* bossGnd = (BossGanondrof*)this->actor.parent;
 
-        bossGnd->actor.colChkInfo.health = ZOP_DifficultyEnabled() ? GND_ZOP_PHASE2_HEALTH : 24;
+        // (with ZeldaOOTProject difficulty: just above the switch to the hard phase, so the first sword hit brings the
+        // cutscene; with gZOP.TestEnv.GanondrofPhase2 = 2 right in the hard phase)
+        bossGnd->actor.colChkInfo.health =
+            !ZOP_DifficultyEnabled()         ? 24
+            : (ZOP_TestGanondrofPhase2() == 2) ? GND_ZOP_PHASEB_HEALTH
+                                               : GND_ZOP_PHASEB_HEALTH + 2;
         bossGnd->flyMode = GND_FLY_NEUTRAL;
         this->actionFunc = EnfHG_Done;
         this->actor.draw = NULL;

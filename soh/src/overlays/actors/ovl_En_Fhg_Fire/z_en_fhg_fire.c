@@ -12,6 +12,9 @@
 #include "overlays/effects/ovl_Effect_Ss_Fhg_Flash/z_eff_ss_fhg_flash.h"
 #include "soh/Enhancements/ZeldaOOTProject/ZeldaOOTProjectHooks.h"
 
+// ZeldaOOTProject: Phantom Ganon's changes only apply in the hard phase 2 (phase 1.5 plays as in the original)
+#define GND_ZOP_ACTIVE() (ZOP_DifficultyEnabled() && BossGanondrof_ZopPhaseB())
+
 // ZeldaOOTProject: Phantom Ganon's tennis gets longer in the course of the fight. At first he misses about as early as
 // in the original, with every bit of health he loses he keeps it up longer (see EnFhgFire_ZopMisses). The ball speeds
 // up as in the original, except for his power hits (staff raised, purple aura), which are a lot faster.
@@ -668,7 +671,7 @@ static u8 EnFhgFire_ZopBurstBall(EnFhgFire* this, PlayState* play, BossGanondrof
     if (dist <= 25.0f) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_HIT_THUNDER);
         Actor_SetPlayerKnockback(play, &this->actor, 3.0f, this->actor.world.rot.y, 0.0f, 3,
-                                             ZOP_DifficultyEnabled() ? ZOP_GND_BALL_DAMAGE : 0x10);
+                                             GND_ZOP_ACTIVE() ? ZOP_GND_BALL_DAMAGE : 0x10);
         return BALL_BURST;
     }
     return BALL_FIZZLE;
@@ -710,6 +713,42 @@ static void EnFhgFire_ZopMotherBall(EnFhgFire* this, PlayState* play) {
     }
 }
 
+// ZeldaOOTProject: a ball of Phantom Ganon's outburst before the hard phase: flies off straight and bursts at a wall or
+// after a while. Only for show: it can't be hit and hurts no one.
+static void EnFhgFire_ZopShowBall(EnFhgFire* this, PlayState* play) {
+    Vec3f accel = { 0.0f, 0.0f, 0.0f };
+    Vec3f vel = { 0.0f, 0.0f, 0.0f };
+    s16 i;
+
+    Actor_UpdateVelocityXYZ(&this->actor);
+    Actor_UpdatePos(&this->actor);
+    Actor_SetScale(&this->actor, (this->work[FHGFIRE_VARIANCE_TIMER] & 1) ? 6.0f : 5.25f);
+    this->actor.shape.rot.z += (s16)(Rand_ZeroOne() * 0x4E20) + 0x4000;
+    for (i = 0; i < 2; i++) {
+        Vec3f pos = { this->actor.world.pos.x + Rand_CenteredFloat(20.0f),
+                      this->actor.world.pos.y + Rand_CenteredFloat(20.0f),
+                      this->actor.world.pos.z + Rand_CenteredFloat(20.0f) };
+
+        EffectSsFhgFlash_SpawnLightBall(play, &pos, &vel, &accel, (s16)(Rand_ZeroOne() * 80.0f) + 150,
+                                        FHGFLASH_LIGHTBALL_GREEN);
+    }
+    Lights_PointNoGlowSetInfo(&this->lightInfo, (s16)this->actor.world.pos.x, (s16)this->actor.world.pos.y,
+                              (s16)this->actor.world.pos.z, 255, 255, 255, 200);
+    Actor_UpdateBgCheckInfo(play, &this->actor, 50.0f, 50.0f, 100.0f, 7);
+    this->ZOP_ABSORB_START_DIST += 1.0f;
+    if ((this->actor.bgCheckFlags & 0x19) || (this->ZOP_ABSORB_START_DIST > 45.0f)) {
+        for (i = 0; i < 20; i++) {
+            Vec3f burst = { Rand_CenteredFloat(16.0f), Rand_CenteredFloat(16.0f), Rand_CenteredFloat(16.0f) };
+            Vec3f fall = { 0.0f, -0.2f, 0.0f };
+
+            EffectSsFhgFlash_SpawnLightBall(play, &this->actor.world.pos, &burst, &fall,
+                                            (s16)(Rand_ZeroOne() * 50.0f) + 100, FHGFLASH_LIGHTBALL_GREEN);
+        }
+        Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_THUNDER_GND);
+        Actor_Kill(&this->actor);
+    }
+}
+
 void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
     f32 dxL;
     f32 dyL;
@@ -730,6 +769,8 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
         }
     } else if (this->actor.world.rot.z == GND_ZOP_MOTHER_BALL) {
         EnFhgFire_ZopMotherBall(this, play);
+    } else if (this->actor.world.rot.z == GND_ZOP_SHOW_BALL) {
+        EnFhgFire_ZopShowBall(this, play);
     } else {
         s32 canBottleReflect2;
         BossGanondrof* bossGnd = (BossGanondrof*)this->actor.parent;
@@ -742,7 +783,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
         dzL = player->actor.world.pos.z - this->actor.world.pos.z;
         Actor_UpdateVelocityXYZ(&this->actor);
         Actor_UpdatePos(&this->actor);
-        if (ZOP_DifficultyEnabled()) {
+        if (GND_ZOP_ACTIVE()) {
             EnFhgFire_ZopRallyArc(this);
             EnFhgFire_ZopRallySound(this);
         }
@@ -806,7 +847,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                                              &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
                                              &gSfxDefaultReverb);
                         Rumble_Request(this->actor.xyzDistToPlayerSq, 0xFF, 0x14, 0x96);
-                        if (ZOP_DifficultyEnabled() && (player->invincibilityTimer == 0)) {
+                        if (GND_ZOP_ACTIVE() && (player->invincibilityTimer == 0)) {
                             // ZeldaOOTProject: the ball is electric and the shield is steel: blocking it gives Link a
                             // shock (thrown back, electrified, damage)
                             Actor_SetPlayerKnockback(play, &this->actor, 4.0f, this->actor.world.rot.y, 4.0f,
@@ -815,7 +856,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                         }
                     } else {
                         if (bossGnd->flyMode == GND_FLY_NEUTRAL) {
-                            if (ZOP_DifficultyEnabled()) {
+                            if (GND_ZOP_ACTIVE()) {
                                 // No more misses: mostly he takes it up and a rally starts, rarely it hits him
                                 angleModX = 0;
                                 angleModY = 0;
@@ -837,7 +878,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                             angleModX = 0;
                             angleModY = 0;
                             this->work[FHGFIRE_RETURN_COUNT]++;
-                            if (ZOP_DifficultyEnabled()) {
+                            if (GND_ZOP_ACTIVE()) {
                                 if (EnFhgFire_ZopMisses(bossGnd, this->work[FHGFIRE_RETURN_COUNT])) {
                                     this->work[FHGFIRE_RETURN_COUNT] = 100;
                                 }
@@ -864,7 +905,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                             angleModX;
                         this->work[FHGFIRE_FIRE_MODE] = FHGFIRE_LIGHT_BLUE;
                         this->work[FHGFIRE_FX_TIMER] = 2;
-                        if (ZOP_DifficultyEnabled()) {
+                        if (GND_ZOP_ACTIVE()) {
                             EnFhgFire_ZopRallyHit(this, play, bossGnd->targetPos.x, bossGnd->targetPos.y,
                                                   bossGnd->targetPos.z);
                             if (this->work[FHGFIRE_RETURN_COUNT] < 100) {
@@ -883,7 +924,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                         Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_LAUGH);
                     }
                     Actor_SetPlayerKnockback(play, &this->actor, 3.0f, this->actor.world.rot.y, 0.0f, 3,
-                                             ZOP_DifficultyEnabled() ? ZOP_GND_BALL_DAMAGE : 0x10);
+                                             GND_ZOP_ACTIVE() ? ZOP_GND_BALL_DAMAGE : 0x10);
                 }
                 break;
             case FHGFIRE_LIGHT_BLUE:
@@ -916,7 +957,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                     // His swing starts this far away and takes 8 frames, so the ball turns about the base distance
                     // in front of him (ZeldaOOTProject: later, closer to him)
                     if ((sqrtf(SQ(dxPG) + SQ(dzPG)) <
-                         ((ZOP_DifficultyEnabled() ? ZOP_GND_RETURN_DIST : 150.0f) + (this->actor.speedXZ * 8.0f)))) {
+                         ((GND_ZOP_ACTIVE() ? ZOP_GND_RETURN_DIST : 150.0f) + (this->actor.speedXZ * 8.0f)))) {
                         if (BossGanondrof_ZopTryCatch(bossGnd, play, this->ZOP_RALLY_HITS)) {
                             // ZeldaOOTProject: he catches it instead of hitting it back
                             this->work[FHGFIRE_FIRE_MODE] = ZOP_FHGFIRE_ABSORB;
@@ -939,11 +980,11 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                     }
                     // (ZeldaOOTProject: also when a fast ball would pass through him within this frame)
                     if (((fabsf(dxPG) < 30.0f) && (fabsf(dzPG) < 30.0f) && (fabsf(dyPG) < 45.0f)) ||
-                        (ZOP_DifficultyEnabled() && (this->work[FHGFIRE_RETURN_COUNT] >= 100) &&
+                        (GND_ZOP_ACTIVE() && (this->work[FHGFIRE_RETURN_COUNT] >= 100) &&
                          (sqrtf(SQ(dxPG) + SQ(dyPG) + SQ(dzPG)) < this->actor.speedXZ + 35.0f))) {
                         killMode = BALL_IMPACT;
                         bossGnd->returnCount = this->work[FHGFIRE_RETURN_COUNT] + 1;
-                        if (ZOP_DifficultyEnabled()) {
+                        if (GND_ZOP_ACTIVE()) {
                             ZOP_GndRallyFlash(1.8f); // Phantom Ganon is hit: one big bright flash
                         }
                         Audio_PlaySfxGeneral(NA_SE_EN_FANTOM_HIT_THUNDER, &bossGnd->actor.projectedPos, 4,
@@ -992,7 +1033,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                 break;
             }
             case FHGFIRE_LIGHT_REFLECT:
-                if (ZOP_DifficultyEnabled() && (this->ZOP_SAVED_SPEED > 0.0f)) {
+                if (GND_ZOP_ACTIVE() && (this->ZOP_SAVED_SPEED > 0.0f)) {
                     // ZeldaOOTProject: never faster than what takes it to just in front of him when his swing lands
                     f32 left = sqrtf(SQ(dxPG) + SQ(dzPG)) - 40.0f;
 
@@ -1021,13 +1062,13 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                     this->actor.world.rot.x = Math_FAtan2F(dyL, dxzL) * (0x8000 / M_PI);
                     this->work[FHGFIRE_FIRE_MODE] = FHGFIRE_LIGHT_GREEN;
                     Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_REFLECT_MG);
-                    if (ZOP_DifficultyEnabled()) {
+                    if (GND_ZOP_ACTIVE()) {
                         EnFhgFire_ZopRallyHit(this, play, player->actor.world.pos.x,
                                               player->actor.world.pos.y + 40.0f,
                                               player->actor.world.pos.z);
                     }
-                    this->actor.speedXZ += ZOP_DifficultyEnabled() ? ZOP_GND_PHANTOM_SPEEDUP : 2.0f;
-                    if (ZOP_DifficultyEnabled() && BossGanondrof_ZopUsePower(bossGnd, play)) {
+                    this->actor.speedXZ += GND_ZOP_ACTIVE() ? ZOP_GND_PHANTOM_SPEEDUP : 2.0f;
+                    if (GND_ZOP_ACTIVE() && BossGanondrof_ZopUsePower(bossGnd, play)) {
                         this->actor.speedXZ +=
                             (this->ZOP_POWER_HITS == 0) ? ZOP_GND_POWER_SPEEDUP : ZOP_GND_POWER_SPEEDUP_MORE;
                         this->ZOP_POWER_HITS++;
@@ -1061,7 +1102,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                     Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_FHG_FIRE, this->actor.world.pos.x,
                                        player->actor.world.pos.y + 20.0f, this->actor.world.pos.z, 0xC8, 0, 0,
                                        FHGFIRE_LIGHTNING_BURST);
-                } else if ((killMode == BALL_FIZZLE) && ZOP_DifficultyEnabled() &&
+                } else if ((killMode == BALL_FIZZLE) && GND_ZOP_ACTIVE() &&
                            (ZOP_IS_BURST_BALL || (this->work[FHGFIRE_FIRE_MODE] == FHGFIRE_LIGHT_GREEN) ||
                             (this->work[FHGFIRE_FIRE_MODE] == FHGFIRE_LIGHT_BLUE))) {
                     // ZeldaOOTProject: any energy ball that hits the floor (a burst ball Link dodged, a ball that
@@ -1110,7 +1151,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
         Lights_PointNoGlowSetInfo(&this->lightInfo, (s16)this->actor.world.pos.x, (s16)this->actor.world.pos.y,
                                   (s16)this->actor.world.pos.z, 255, 255, 255, 200);
         {
-            f32 maxSpeed = ZOP_DifficultyEnabled()
+            f32 maxSpeed = GND_ZOP_ACTIVE()
                                ? CLAMP_MAX(ZOP_GND_MAX_SPEED + this->ZOP_POWER_HITS * ZOP_GND_POWER_SPEEDUP,
                                            ZOP_GND_POWER_MAX_SPEED)
                                : 20.0f;
