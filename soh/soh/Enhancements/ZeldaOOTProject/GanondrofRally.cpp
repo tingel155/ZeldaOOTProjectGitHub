@@ -67,6 +67,16 @@ void Tick() {
         play->envCtx.unk_EE[0] = 0;
         sRainApplied = false;
     }
+    // Rain sound for as long as drops are falling (the storm loop of the fishing pond), as loud as the rain is heavy;
+    // like all looping sounds it has to be triggered every frame
+    if (play->envCtx.unk_EE[1] > 0) {
+        static f32 sRainFreq = 1.0f;
+        static f32 sRainVolume = 1.0f;
+        static s8 sRainReverb = 0;
+
+        sRainVolume = std::min(1.0f, 0.3f + 0.7f * play->envCtx.unk_EE[1] / (float)kRainDrops);
+        Audio_PlaySfxGeneral(NA_SE_EV_RAIN - SFX_FLAG, &gSfxDefaultPos, 4, &sRainFreq, &sRainVolume, &sRainReverb);
+    }
     // Eases in quickly with every hit, fades out slowly once the rally is over
     float step = (sTarget > sGlow) ? 0.08f : 0.02f;
     Math_ApproachF(&sGlow, sTarget, 1.0f, step);
