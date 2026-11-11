@@ -1368,13 +1368,13 @@ static void BossGanondrof_ZopSetupRage(BossGanondrof* this, PlayState* play) {
         f32 nx;
         f32 nz;
 
-        // he comes down near the middle of the room (the cutscene looks best there), Link hops to 190 from that
-        // spot: a backflip away if he is too close, a leap toward it if he is too far
+        // he comes down where he is (only pulled in a little if he is over the edge of the platform), Link hops to
+        // 190 from that spot: a backflip away if he is too close, a leap toward it if he is too far
         {
             f32 cx = sZopRageBasePos.x - GND_BOSSROOM_CENTER_X;
             f32 cz = sZopRageBasePos.z - GND_BOSSROOM_CENTER_Z;
             f32 cr = sqrtf(SQ(cx) + SQ(cz));
-            f32 k = (cr > 50.0f) ? 50.0f / cr : 1.0f;
+            f32 k = (cr > 260.0f) ? 260.0f / cr : 1.0f;
 
             sZopRageTarget.x = GND_BOSSROOM_CENTER_X + cx * k;
             sZopRageTarget.z = GND_BOSSROOM_CENTER_Z + cz * k;
@@ -1382,9 +1382,23 @@ static void BossGanondrof_ZopSetupRage(BossGanondrof* this, PlayState* play) {
         d = sqrtf(SQ(player->actor.world.pos.x - sZopRageTarget.x) + SQ(player->actor.world.pos.z - sZopRageTarget.z));
         nx = (d > 1.0f) ? (player->actor.world.pos.x - sZopRageTarget.x) / d : 0.0f;
         nz = (d > 1.0f) ? (player->actor.world.pos.z - sZopRageTarget.z) / d : 1.0f;
-        spot.x = sZopRageTarget.x + nx * 190.0f;
         spot.y = player->actor.world.pos.y;
-        spot.z = sZopRageTarget.z + nz * 190.0f;
+        {
+            // on the platform: turn the direction toward the middle of the room until the spot is inside
+            Vec3f center = { GND_BOSSROOM_CENTER_X, 0.0f, GND_BOSSROOM_CENTER_Z };
+            s16 yaw = (s16)(Math_FAtan2F(nx, nz) * (0x8000 / M_PI));
+            s16 yawCenter = Math_Vec3f_Yaw(&sZopRageTarget, &center);
+            s16 i;
+
+            for (i = 0; i < 10; i++) {
+                spot.x = sZopRageTarget.x + Math_SinS(yaw) * 190.0f;
+                spot.z = sZopRageTarget.z + Math_CosS(yaw) * 190.0f;
+                if (SQ(spot.x - center.x) + SQ(spot.z - center.z) <= SQ(280.0f)) {
+                    break;
+                }
+                yaw += (s16)((s16)(yawCenter - yaw) / 3);
+            }
+        }
         sZopRageTarget.y = sZopRageBasePos.y;
 
         sZopRageLinkFlip = false;
