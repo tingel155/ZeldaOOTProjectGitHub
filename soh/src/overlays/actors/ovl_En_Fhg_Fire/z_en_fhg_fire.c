@@ -972,10 +972,12 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                     Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_FHG_FIRE, this->actor.world.pos.x,
                                        player->actor.world.pos.y + 20.0f, this->actor.world.pos.z, 0xC8, 0, 0,
                                        FHGFIRE_LIGHTNING_BURST);
-                } else if ((killMode == BALL_FIZZLE) && ZOP_IS_BURST_BALL &&
-                           (this->work[FHGFIRE_FIRE_MODE] == FHGFIRE_LIGHT_GREEN)) {
-                    // ZeldaOOTProject: a burst ball Link dodged hits the floor: a damaging lightning burst (like when it
-                    // hits Link) and a ring spreading over the floor that Link has to jump over
+                } else if ((killMode == BALL_FIZZLE) && ZOP_DifficultyEnabled() &&
+                           (ZOP_IS_BURST_BALL || (this->work[FHGFIRE_FIRE_MODE] == FHGFIRE_LIGHT_GREEN) ||
+                            (this->work[FHGFIRE_FIRE_MODE] == FHGFIRE_LIGHT_BLUE))) {
+                    // ZeldaOOTProject: any energy ball that hits the floor (a burst ball Link dodged, a ball that
+                    // missed): a damaging lightning burst (like when it hits Link) and a ring spreading over the
+                    // floor that Link has to jump over, like the ones of his staff slam
                     f32 groundY = (this->actor.floorHeight > BGCHECK_Y_MIN) ? this->actor.floorHeight
                                                                              : this->actor.world.pos.y;
 
