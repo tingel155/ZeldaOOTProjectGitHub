@@ -217,10 +217,17 @@ static s16 sZopPowerTimer;     // power hit, see below (> 0: staff charged for t
 static s16 sZopPowerRaised;    // staff still held up (until his first charged return)
 static s16 sZopPowerFlashTimer; // lens flare on the staff when it gets charged
 static s16 sZopChargesLeft;     // charge attack: more charges to come in this series
-#define ZOP_GND_CHARGE_DAMAGE 0x20
+// Rally movement: he circles Link at about the same distance, swaying, and swings over to another side with every
+// return of his (instead of floating at one fixed spot of the room)
+static u8 sZopRallyActive;
+static s16 sZopRallyYaw;       // direction from Link to him
+static s16 sZopRallyYawTarget;
+#define ZOP_RALLY_DIST 420.0f  // distance to Link in a rally
+#define ZOP_RALLY_ROOM 380.0f  // how far from the middle of the room he may float
+#define ZOP_GND_CHARGE_DAMAGE 0x28
 #define ZOP_CHARGE_SPEED 18.0f   // vanilla 10
 #define ZOP_CHARGE_REWINDUP 12   // wind-up frames between two charges of a series
-#define ZOP_SLAM_CHANCE 0.1f     // chance of the staff slam on its own whenever he picks his next move
+#define ZOP_SLAM_CHANCE 0.15f    // chance of the staff slam on its own whenever he picks his next move
 static void BossGanondrof_ZopSetupFinale(BossGanondrof* this, PlayState* play);
 static u8 sZopFinaleAlone; // open to attacks after the staff slam (kneeling); set for every slam
 #define ZOP_POWER_FLASH_FRAMES 12
@@ -469,7 +476,7 @@ typedef enum {
 #define ZOP_BURST_CHARGE_FRAMES 22
 #define ZOP_BURST_MIN_HITS 3   // rally hits before he may catch the ball
 #define ZOP_BURST_CHANCE 0.4f  // chance to catch it then
-#define ZOP_BURST_COOLDOWN 600 // frames before the next one (30 s)
+#define ZOP_BURST_COOLDOWN 450 // frames before the next one (22 s)
 
 static s16 sZopBurstState;
 static s16 sZopBurstTimer;
@@ -477,7 +484,7 @@ static s16 sZopBurstTimer;
 static void BossGanondrof_ZopBurst(BossGanondrof* this, PlayState* play);
 
 // ---------- ZeldaOOTProject: power hit
-#define ZOP_CHARGE_CHANCE 0.1f // chance of his charge attack whenever he picks his next move
+#define ZOP_CHARGE_CHANCE 0.15f// chance of his charge attack whenever he picks his next move
 
 #define ZOP_POWER_MIN_HITS 2   // rally hits before he may charge his staff
 #define ZOP_POWER_NEAR 250.0f  // distance to Link at which the chance per return of his is lowest
@@ -716,6 +723,36 @@ static void BossGanondrof_ZopBurst(BossGanondrof* this, PlayState* play) {
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_FLOAT - SFX_FLAG);
 }
 
+// ZeldaOOTProject: where he floats in a rally: about ZOP_RALLY_DIST from Link, swaying from side to side and moving
+// over to the new side after each of his returns, kept inside the room
+static void BossGanondrof_ZopRallySpot(BossGanondrof* this, Player* player, f32* targetX, f32* targetZ) {
+    Vec3f center = { GND_BOSSROOM_CENTER_X, 0.0f, GND_BOSSROOM_CENTER_Z };
+    s16 yaw;
+    f32 dist = ZOP_RALLY_DIST;
+    s16 i;
+
+    if (!sZopRallyActive) {
+        sZopRallyActive = true;
+        sZopRallyYaw = sZopRallyYawTarget = Math_Vec3f_Yaw(&player->actor.world.pos, &this->actor.world.pos);
+    }
+    Math_ApproachS(&sZopRallyYaw, sZopRallyYawTarget, 6, 0x280);
+    yaw = sZopRallyYaw + (s16)(Math_SinS(this->work[GND_VARIANCE_TIMER] * 0x380) * 0xA00);
+
+    // turn toward the middle of the room (and come closer if need be) until the spot is inside the room
+    for (i = 0; i < 12; i++) {
+        *targetX = player->actor.world.pos.x + Math_SinS(yaw) * dist;
+        *targetZ = player->actor.world.pos.z + Math_CosS(yaw) * dist;
+        if (SQ(*targetX - center.x) + SQ(*targetZ - center.z) <= SQ(ZOP_RALLY_ROOM)) {
+            break;
+        }
+        yaw += (s16)((s16)(Math_Vec3f_Yaw(&player->actor.world.pos, &center) - yaw) / 3);
+        if (i >= 6) {
+            dist *= 0.85f;
+        }
+        sZopRallyYawTarget = yaw; // keeps him from pushing against the wall
+    }
+}
+
 void BossGanondrof_SetupNeutral(BossGanondrof* this, f32 arg1) {
     Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonNeutralAnim, arg1);
     this->actionFunc = BossGanondrof_Neutral;
@@ -732,9 +769,13 @@ void BossGanondrof_Neutral(BossGanondrof* this, PlayState* play) {
     Actor* playerx = &player->actor;
     Actor* thisx = &this->actor;
     f32 rand01;
+    f32 rallyFrac;
     s16 i;
 
     SkelAnime_Update(&this->skelAnime);
+    if ((this->flyMode != GND_FLY_VOLLEY) && (this->flyMode != GND_FLY_RETURN)) {
+        sZopRallyActive = false;
+    }
     switch (this->flyMode) {
         case GND_FLY_NEUTRAL:
             if (this->timers[0] == 0) {
@@ -801,6 +842,9 @@ void BossGanondrof_Neutral(BossGanondrof* this, PlayState* play) {
             targetY = playerx->world.pos.y + 100.0f + 100.0f;
             targetX += Math_SinS(this->work[GND_VARIANCE_TIMER] * 0x500) * 100.0f;
             targetZ += Math_CosS(this->work[GND_VARIANCE_TIMER] * 0x700) * 100.0f;
+            if (ZOP_DifficultyEnabled()) {
+                BossGanondrof_ZopRallySpot(this, player, &targetX, &targetZ);
+            }
             if (this->timers[0] == 0) {
                 this->flyMode = GND_FLY_RETURN;
                 this->returnSuccess = false;
@@ -815,6 +859,9 @@ void BossGanondrof_Neutral(BossGanondrof* this, PlayState* play) {
             targetY = playerx->world.pos.y + 100.0f + 100.0f;
             targetX += Math_SinS(this->work[GND_VARIANCE_TIMER] * 0x500) * 50.0f;
             targetZ += Math_CosS(this->work[GND_VARIANCE_TIMER] * 0x700) * 50.0f;
+            if (ZOP_DifficultyEnabled()) {
+                BossGanondrof_ZopRallySpot(this, player, &targetX, &targetZ);
+            }
             if (this->returnSuccess) {
                 this->returnSuccess = false;
                 BossGanondrof_SetupReturn(this, play);
@@ -838,14 +885,16 @@ void BossGanondrof_Neutral(BossGanondrof* this, PlayState* play) {
             break;
     }
 
-    Math_ApproachF(&thisx->world.pos.x, targetX, 0.05f, this->fwork[GND_FLOAT_SPEED]);
+    // (ZeldaOOTProject: livelier in a rally, he follows his moving spot more closely)
+    rallyFrac = (ZOP_DifficultyEnabled() && sZopRallyActive) ? 0.09f : 0.05f;
+    Math_ApproachF(&thisx->world.pos.x, targetX, rallyFrac, this->fwork[GND_FLOAT_SPEED]);
     if (this->timers[2] != 0) {
         Math_ApproachF(&thisx->world.pos.y, targetY + 100.0f, 0.1f, 50.0f);
     } else {
         Math_ApproachF(&thisx->world.pos.y, targetY, 0.05f, 10.0f);
     }
 
-    Math_ApproachF(&thisx->world.pos.z, targetZ, 0.05f, this->fwork[GND_FLOAT_SPEED]);
+    Math_ApproachF(&thisx->world.pos.z, targetZ, rallyFrac, this->fwork[GND_FLOAT_SPEED]);
     Math_ApproachF(&this->fwork[GND_FLOAT_SPEED], 50.0f, 1.0f, 0.5f);
     thisx->velocity.x = thisx->world.pos.x - thisx->prevPos.x;
     thisx->velocity.z = thisx->world.pos.z - thisx->prevPos.z;
@@ -945,6 +994,11 @@ void BossGanondrof_SetupReturn(BossGanondrof* this, PlayState* play) {
     this->fwork[GND_END_FRAME] = Animation_GetLastFrame(returnAnim[rand]);
     Animation_MorphToPlayOnce(&this->skelAnime, returnAnim[rand], 0.0f);
     this->actionFunc = BossGanondrof_Return;
+    if (ZOP_DifficultyEnabled() && sZopRallyActive) {
+        // ZeldaOOTProject: with his return he swings over to another side of Link
+        sZopRallyYawTarget +=
+            ((Rand_ZeroOne() < 0.5f) ? -1 : 1) * (s16)(0x1400 + Rand_ZeroOne() * 0x1400);
+    }
 }
 
 void BossGanondrof_Return(BossGanondrof* this, PlayState* play) {

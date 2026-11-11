@@ -23,7 +23,7 @@
 #define ZOP_GND_POWER_MAX_SPEED 28.0f
 #define ZOP_POWER_HITS actor.home.rot.z // power hits this ball has taken (raise its top speed)
 // Damage of a ball that hits Link (vanilla 0x10)
-#define ZOP_GND_BALL_DAMAGE 0x20
+#define ZOP_GND_BALL_DAMAGE 0x28
 // He hits the ball back when it is about this far from him (vanilla 150)
 #define ZOP_GND_RETURN_DIST 70.0f
 // A ball he throws on the fly (not in a volley) and Link hits back starts a rally this often; otherwise it hits him
