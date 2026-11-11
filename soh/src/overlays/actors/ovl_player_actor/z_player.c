@@ -6348,6 +6348,15 @@ void func_8083BCD0(Player* this, PlayState* play, s32 controlStickDirection) {
     Player_PlaySfx(this, ((controlStickDirection << 0xE) == 0x8000) ? NA_SE_PL_ROLL : NA_SE_PL_SKIP);
 }
 
+// ZeldaOOTProject: Link faces `from` and does a backflip away from it, flying back at `speed` (cutscenes)
+void ZOP_PlayerBackflipAway(PlayState* play, Vec3f* from, f32 speed) {
+    Player* this = GET_PLAYER(play);
+
+    this->actor.shape.rot.y = this->actor.world.rot.y = Math_Vec3f_Yaw(&this->actor.world.pos, from);
+    func_8083BCD0(this, play, PLAYER_STICK_DIR_BACKWARD);
+    this->linearVelocity = speed;
+}
+
 s32 Player_ActionHandler_10(Player* this, PlayState* play) {
     s32 controlStickDirection;
 

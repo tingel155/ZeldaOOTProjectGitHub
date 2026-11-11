@@ -225,6 +225,7 @@ static u8 sZopPhaseB;
 static s16 sZopRageTimer;      // frames into the cutscene between the two
 static s16 sZopRageCam;
 static Vec3f sZopRageBasePos;  // where he kneels (he trembles around it)
+static u8 sZopRageLinkFlip;     // Link is doing his backflip; held in the cutscene once he lands
 #define GND_ZOP_ACTIVE() (ZOP_DifficultyEnabled() && sZopPhaseB)
 static void BossGanondrof_ZopSetupRage(BossGanondrof* this, PlayState* play);
 static void BossGanondrof_ZopRage(BossGanondrof* this, PlayState* play);
@@ -1356,36 +1357,23 @@ static void BossGanondrof_ZopSetupRage(BossGanondrof* this, PlayState* play) {
     sZopRageTimer = 0;
     sZopRageBasePos = this->actor.world.pos;
 
-    // Link steps back, so he doesn't stand in Phantom Ganon during the cutscene
+    // Link too close: he does a backflip away from Phantom Ganon (and is held in the cutscene once he lands)
     {
         Player* player = GET_PLAYER(play);
-        f32 dx = player->actor.world.pos.x - sZopRageBasePos.x;
-        f32 dz = player->actor.world.pos.z - sZopRageBasePos.z;
-        f32 d = sqrtf(SQ(dx) + SQ(dz));
+        f32 d = sqrtf(SQ(player->actor.world.pos.x - sZopRageBasePos.x) +
+                      SQ(player->actor.world.pos.z - sZopRageBasePos.z));
 
-        if (d < 190.0f) {
-            f32 nx = (d > 1.0f) ? dx / d : 0.0f;
-            f32 nz = (d > 1.0f) ? dz / d : 1.0f;
-            Vec3f spot = { sZopRageBasePos.x + nx * 190.0f, player->actor.world.pos.y, sZopRageBasePos.z + nz * 190.0f };
-            f32 cx = spot.x - GND_BOSSROOM_CENTER_X;
-            f32 cz = spot.z - GND_BOSSROOM_CENTER_Z;
-            f32 cr = sqrtf(SQ(cx) + SQ(cz));
-
-            // not over the edge of the platform: then to the other side of him, toward the middle
-            if (cr > 280.0f) {
-                spot.x = sZopRageBasePos.x - nx * 190.0f;
-                spot.z = sZopRageBasePos.z - nz * 190.0f;
-            }
-            player->actor.world.pos.x = spot.x;
-            player->actor.world.pos.z = spot.z;
-            player->actor.prevPos = player->actor.world.pos;
-            player->actor.shape.rot.y = player->actor.world.rot.y =
-                Math_Vec3f_Yaw(&player->actor.world.pos, &sZopRageBasePos);
+        sZopRageLinkFlip = false;
+        if (((d < 190.0f) || (ZOP_TestGanondrofSlam() == 3)) && (player->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
+            ZOP_PlayerBackflipAway(play, &sZopRageBasePos, CLAMP((190.0f - d) / 11.0f, 5.0f, 12.0f));
+            sZopRageLinkFlip = true;
         }
     }
 
     func_80064520(play, &play->csCtx);
-    Player_SetCsActionWithHaltedActors(play, &this->actor, 1);
+    if (!sZopRageLinkFlip) {
+        Player_SetCsActionWithHaltedActors(play, &this->actor, 1);
+    }
     sZopRageCam = Play_CreateSubCamera(play);
     Play_ChangeCameraStatus(play, CAM_ID_MAIN, CAM_STAT_WAIT);
     Play_ChangeCameraStatus(play, sZopRageCam, CAM_STAT_ACTIVE);
@@ -1407,6 +1395,14 @@ static void BossGanondrof_ZopRage(BossGanondrof* this, PlayState* play) {
     Vec3f eye;
     Vec3f at;
     s16 i;
+
+    if (sZopRageLinkFlip &&
+        (((player->actor.bgCheckFlags & BGCHECKFLAG_GROUND) && !(player->stateFlags2 & PLAYER_STATE2_HOPPING) &&
+          (t > 3)) ||
+         (t > 30))) {
+        sZopRageLinkFlip = false;
+        Player_SetCsActionWithHaltedActors(play, thisx, 1);
+    }
 
     SkelAnime_Update(&this->skelAnime);
     Math_ApproachS(&thisx->shape.rot.y, thisx->yawTowardsPlayer, 5, 0x7D0);
@@ -1508,12 +1504,17 @@ static void BossGanondrof_ZopRage(BossGanondrof* this, PlayState* play) {
     {
         static f32 sBack;
         static f32 sUp;
+        static f32 sAtMix; // 0: between Link and him (so Link's backflip is in the picture), 1: on him
         f32 back;
         f32 up;
 
         if (t == 1) {
             sBack = 170.0f;
             sUp = 45.0f;
+            sAtMix = 0.0f;
+        }
+        if (t > 22) {
+            Math_ApproachF(&sAtMix, 1.0f, 1.0f, 0.04f);
         }
         Math_ApproachF(&sBack, (t < ZOP_RAGE_BURST) ? 170.0f : 300.0f, 0.05f, 4.0f);
         Math_ApproachF(&sUp, (t < ZOP_RAGE_BURST) ? 45.0f : 120.0f, 0.05f, 2.5f);
@@ -1523,9 +1524,36 @@ static void BossGanondrof_ZopRage(BossGanondrof* this, PlayState* play) {
         eye.x = sZopRageBasePos.x + Math_SinS(yawToLink) * back;
         eye.y = floorY + up;
         eye.z = sZopRageBasePos.z + Math_CosS(yawToLink) * back;
-        at.x = thisx->world.pos.x;
+        at.x = thisx->world.pos.x + (player->actor.world.pos.x - thisx->world.pos.x) * 0.5f * (1.0f - sAtMix);
         at.y = thisx->world.pos.y + 20.0f;
-        at.z = thisx->world.pos.z;
+        at.z = thisx->world.pos.z + (player->actor.world.pos.z - thisx->world.pos.z) * 0.5f * (1.0f - sAtMix);
+        if (sAtMix < 1.0f) {
+            // at first from the side of the line between the two, on the platform, so Link's backflip is seen
+            f32 mx = (thisx->world.pos.x + player->actor.world.pos.x) * 0.5f;
+            f32 mz = (thisx->world.pos.z + player->actor.world.pos.z) * 0.5f;
+            s16 side = Math_Vec3f_Yaw(&thisx->world.pos, &player->actor.world.pos) + 0x4000;
+            f32 ex = mx + Math_SinS(side) * 230.0f;
+            f32 ez = mz + Math_CosS(side) * 230.0f;
+
+            if (SQ(ex - GND_BOSSROOM_CENTER_X) + SQ(ez - GND_BOSSROOM_CENTER_Z) > SQ(290.0f)) {
+                ex = mx - Math_SinS(side) * 230.0f;
+                ez = mz - Math_CosS(side) * 230.0f;
+            }
+            {
+                // glide around him in an arc (not straight through him) over to the later view
+                Vec3f early = { ex, 0.0f, ez };
+                s16 yawEarly = Math_Vec3f_Yaw(&sZopRageBasePos, &early);
+                f32 distEarly = Math_Vec3f_DistXZ(&sZopRageBasePos, &early);
+                s16 yawLate = Math_Vec3f_Yaw(&sZopRageBasePos, &eye);
+                f32 distLate = Math_Vec3f_DistXZ(&sZopRageBasePos, &eye);
+                s16 yaw = yawEarly + (s16)((s16)(yawLate - yawEarly) * sAtMix);
+                f32 dist = distEarly + (distLate - distEarly) * sAtMix;
+
+                eye.x = sZopRageBasePos.x + Math_SinS(yaw) * dist;
+                eye.z = sZopRageBasePos.z + Math_CosS(yaw) * dist;
+                eye.y = (floorY + 80.0f) + (eye.y - (floorY + 80.0f)) * sAtMix;
+            }
+        }
         if (sZopRageCam != 0) {
             Play_CameraSetAtEye(play, sZopRageCam, &at, &eye);
         }

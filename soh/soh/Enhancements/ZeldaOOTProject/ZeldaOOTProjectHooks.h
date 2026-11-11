@@ -81,6 +81,8 @@ float ZOP_LockOnLeapSpeed(void);
 float ZOP_SideHopHeight(float vanillaHeight);
 // Air control in hops / Z-targeting jumps (push per frame, 0 = off)
 float ZOP_AirControl(void);
+// Link does a backflip away from `from` (cutscenes, z_player.c)
+void ZOP_PlayerBackflipAway(struct PlayState* play, Vec3f* from, float speed);
 // Lock-on camera without a jolt when Link jumps
 int ZOP_SmoothJumpCamera(void);
 
