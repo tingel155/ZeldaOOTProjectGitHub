@@ -220,8 +220,9 @@ static s16 sZopChargesLeft;     // charge attack: more charges to come in this s
 #define ZOP_GND_CHARGE_DAMAGE 0x20
 #define ZOP_CHARGE_SPEED 18.0f   // vanilla 10
 #define ZOP_CHARGE_REWINDUP 12   // wind-up frames between two charges of a series
-#define ZOP_SLAM_CHANCE 0.2f     // chance of the staff slam on its own whenever he picks his next move
+#define ZOP_SLAM_CHANCE 0.15f    // chance of the staff slam on its own whenever he picks his next move
 static void BossGanondrof_ZopSetupFinale(BossGanondrof* this, PlayState* play);
+static u8 sZopFinaleAlone; // staff slam on its own (not after a charge series): open to attacks after the slam
 #define ZOP_POWER_FLASH_FRAMES 12
 
 void BossGanondrof_Init(Actor* thisx, PlayState* play) {
@@ -476,7 +477,7 @@ static s16 sZopBurstTimer;
 static void BossGanondrof_ZopBurst(BossGanondrof* this, PlayState* play);
 
 // ---------- ZeldaOOTProject: power hit
-#define ZOP_CHARGE_CHANCE 0.35f // chance of his charge attack whenever he picks his next move
+#define ZOP_CHARGE_CHANCE 0.15f // chance of his charge attack whenever he picks his next move
 
 #define ZOP_POWER_MIN_HITS 2   // rally hits before he may charge his staff
 #define ZOP_POWER_NEAR 250.0f  // distance to Link at which the chance per return of his is lowest
@@ -746,8 +747,10 @@ void BossGanondrof_Neutral(BossGanondrof* this, PlayState* play) {
                     this->fwork[GND_FLOAT_SPEED] = 0.0f;
                     Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_LAUGH);
                 } else if (ZOP_DifficultyEnabled() && (rand01 < ZOP_CHARGE_CHANCE + ZOP_SLAM_CHANCE)) {
-                    // ZeldaOOTProject: the staff slam with its rings, without a charge before it
+                    // ZeldaOOTProject: the staff slam with its rings, without a charge before it; afterwards he is open
+                    // to attacks for a moment
                     BossGanondrof_ZopSetupFinale(this, play);
+                    sZopFinaleAlone = true;
                 } else if (thisx->colChkInfo.health < 5) {
                     if (rand01 < 0.25f) {
                         BossGanondrof_SetupThrow(this, play);
@@ -1102,6 +1105,7 @@ static void BossGanondrof_ZopSetupFinale(BossGanondrof* this, PlayState* play) {
     this->actor.velocity.x = this->actor.velocity.y = this->actor.velocity.z = 0.0f;
     this->actor.gravity = 0.0f;
     sZopFinaleState = ZOP_FINALE_FLY;
+    sZopFinaleAlone = false;
     sZopFinaleTimer = 50; // fallback
     sZopFinaleGroundY = GET_PLAYER(play)->actor.world.pos.y;
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_LAUGH);
@@ -1119,6 +1123,14 @@ static void BossGanondrof_ZopFinale(BossGanondrof* this, PlayState* play) {
     Math_ApproachS(&thisx->shape.rot.y, thisx->yawTowardsPlayer, 5, 0x7D0);
     if (sZopFinaleTimer > 0) {
         sZopFinaleTimer--;
+    }
+
+    if (sZopFinaleAlone && (sZopFinaleState >= ZOP_FINALE_RINGS)) {
+        this->shockTimer = 2;
+        Math_ApproachF(&thisx->world.pos.y, sZopFinaleGroundY + 10.0f, 0.3f, 5.0f);
+        if ((this->work[GND_VARIANCE_TIMER] % 20) == 0) {
+            Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_DAMAGE2);
+        }
     }
 
     switch (sZopFinaleState) {
@@ -1159,6 +1171,11 @@ static void BossGanondrof_ZopFinale(BossGanondrof* this, PlayState* play) {
                 Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_HIT_THUNDER);
                 Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_THUNDER_GND);
                 Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_THUNDER);
+                if (sZopFinaleAlone) {
+                    // worn out by the slam: he twitches and crackles like when a ball hit him, open to attacks
+                    Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonAirDamageAnim, 0.0f);
+                    Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_DAMAGE);
+                }
                 sZopFinaleState = ZOP_FINALE_RINGS;
                 sZopFinaleRingsLeft = 2 + (s16)(Rand_ZeroOne() * 2.99f); // 2-4 more
                 sZopFinaleTimer = 14 + (s16)(Rand_ZeroOne() * 18.0f);
@@ -1176,7 +1193,7 @@ static void BossGanondrof_ZopFinale(BossGanondrof* this, PlayState* play) {
                     sZopFinaleTimer = 12 + (s16)(Rand_ZeroOne() * 22.0f);
                 } else {
                     sZopFinaleState = ZOP_FINALE_RECOVER;
-                    sZopFinaleTimer = 30;
+                    sZopFinaleTimer = sZopFinaleAlone ? 50 : 30;
                 }
             }
             break;
@@ -1794,6 +1811,11 @@ void BossGanondrof_Update(Actor* thisx, PlayState* play) {
         CollisionCheck_SetOC(play, &play->colChkCtx, &this->colliderBody.base);
     } else if (this->actionFunc == BossGanondrof_Block) {
         CollisionCheck_SetAC(play, &play->colChkCtx, &this->colliderBody.base);
+    } else if ((this->actionFunc == BossGanondrof_ZopFinale) && sZopFinaleAlone &&
+               (sZopFinaleState >= ZOP_FINALE_RINGS)) {
+        // ZeldaOOTProject: open to attacks after his staff slam on its own
+        CollisionCheck_SetAC(play, &play->colChkCtx, &this->colliderBody.base);
+        CollisionCheck_SetOC(play, &play->colChkCtx, &this->colliderBody.base);
     } else if (this->actionFunc == BossGanondrof_Charge) {
         CollisionCheck_SetAC(play, &play->colChkCtx, &this->colliderBody.base);
         CollisionCheck_SetAT(play, &play->colChkCtx, &this->colliderBody.base);
