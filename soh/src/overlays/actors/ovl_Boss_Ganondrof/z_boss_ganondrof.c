@@ -216,6 +216,10 @@ static s16 sZopBurstCooldown; // catch-and-burst attack, see below
 static s16 sZopPowerTimer;     // power hit, see below (> 0: staff charged for the rest of the rally)
 static s16 sZopPowerRaised;    // staff still held up (until his first charged return)
 static s16 sZopPowerFlashTimer; // lens flare on the staff when it gets charged
+static s16 sZopChargesLeft;     // charge attack: more charges to come in this series
+#define ZOP_GND_CHARGE_DAMAGE 0x20
+#define ZOP_CHARGE_SPEED 18.0f   // vanilla 10
+#define ZOP_CHARGE_REWINDUP 12   // wind-up frames between two charges of a series
 #define ZOP_POWER_FLASH_FRAMES 12
 
 void BossGanondrof_Init(Actor* thisx, PlayState* play) {
@@ -245,6 +249,11 @@ void BossGanondrof_Init(Actor* thisx, PlayState* play) {
     Collider_InitCylinder(play, &this->colliderSpear);
     Collider_SetCylinder(play, &this->colliderBody, &this->actor, &sCylinderInitBody);
     Collider_SetCylinder(play, &this->colliderSpear, &this->actor, &sCylinderInitSpear);
+    if (ZOP_DifficultyEnabled()) {
+        // ZeldaOOTProject: his charge attack hurts a lot more
+        this->colliderBody.info.toucher.damage = ZOP_GND_CHARGE_DAMAGE;
+        this->colliderSpear.info.toucher.damage = ZOP_GND_CHARGE_DAMAGE;
+    }
     this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
     if (Flags_GetClear(play, play->roomCtx.curRoom.num)) {
         Actor_Kill(&this->actor);
@@ -468,7 +477,8 @@ static void BossGanondrof_ZopBurst(BossGanondrof* this, PlayState* play);
 #define ZOP_CHARGE_CHANCE 0.35f // chance of his charge attack whenever he picks his next move
 
 #define ZOP_POWER_MIN_HITS 2   // rally hits before he may charge his staff
-#define ZOP_POWER_CHANCE 0.3f  // chance per return of Link's
+#define ZOP_POWER_NEAR 250.0f  // distance to Link at which the chance per return of his is lowest
+#define ZOP_POWER_FAR 600.0f   // ... and highest
 
 
 static void BossGanondrof_ZopPurpleSparks(BossGanondrof* this, PlayState* play, s16 count, f32 spread, f32 speed) {
@@ -489,9 +499,12 @@ static void BossGanondrof_ZopPurpleSparks(BossGanondrof* this, PlayState* play, 
 void BossGanondrof_ZopTryPowerUp(BossGanondrof* this, PlayState* play, s16 rallyHits) {
     EnfHG* horse = (EnfHG*)this->actor.child;
 
+    // The farther Link is, the easier the rally, so the more likely the power hit: 5% up close, 80% from 600 on
+    f32 chance = CLAMP((this->actor.xzDistToPlayer - ZOP_POWER_NEAR) / (ZOP_POWER_FAR - ZOP_POWER_NEAR), 0.05f, 0.8f);
+
     if (!ZOP_DifficultyEnabled() || (sZopPowerTimer > 0) || (rallyHits < ZOP_POWER_MIN_HITS) ||
         ((this->actionFunc != BossGanondrof_Neutral) && (this->actionFunc != BossGanondrof_Return)) ||
-        (Rand_ZeroOne() > ZOP_POWER_CHANCE)) {
+        (Rand_ZeroOne() > chance)) {
         return;
     }
     sZopPowerTimer = 1;
@@ -1022,12 +1035,61 @@ void BossGanondrof_Block(BossGanondrof* this, PlayState* play) {
     }
 }
 
+// ZeldaOOTProject: the start of a charge: his staff flares up, lightning lashes out, he laughs
+static void BossGanondrof_ZopChargeFlash(BossGanondrof* this, PlayState* play) {
+    static Color_RGBA8 boltPrim = { 255, 255, 255, 255 };
+    static Color_RGBA8 boltEnv = { 120, 200, 255, 255 };
+    s16 i;
+
+    sZopPowerFlashTimer = ZOP_POWER_FLASH_FRAMES;
+    for (i = 0; i < 5; i++) {
+        Vec3f pos = this->spearTip;
+
+        EffectSsLightning_Spawn(play, &pos, &boltPrim, &boltEnv, (s16)(150 + Rand_ZeroOne() * 100.0f),
+                                (s16)(i * (0x10000 / 5) + Rand_CenteredFloat(0x1800)), 6, 2);
+    }
+    this->shockTimer = 15;
+    ZOP_GndRallyFlash(0.9f);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EV_DIAMOND_SWITCH);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_THUNDER);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_LAUGH);
+}
+
+// ZeldaOOTProject: the end of a charge: he slams lightning into the floor, a damaging burst and shocks over the floor
+// fanned out toward Link
+static void BossGanondrof_ZopChargeImpact(BossGanondrof* this, PlayState* play) {
+    static const s16 sShockFan[] = { 0, -0x1000, 0x1000, -0x2400, 0x2400 };
+    Player* player = GET_PLAYER(play);
+    f32 groundY = player->actor.world.pos.y;
+    s16 yawToLink = Math_Vec3f_Yaw(&this->actor.world.pos, &player->actor.world.pos);
+    s16 i;
+
+    Actor_Spawn(&play->actorCtx, play, ACTOR_EN_FHG_FIRE, this->actor.world.pos.x, groundY + 20.0f,
+                this->actor.world.pos.z, 400, 0, 0, FHGFIRE_LIGHTNING_BURST);
+    for (i = 0; i < ARRAY_COUNT(sShockFan); i++) {
+        Actor_Spawn(&play->actorCtx, play, ACTOR_EN_FHG_FIRE, this->actor.world.pos.x, groundY + 20.0f,
+                    this->actor.world.pos.z, 0, yawToLink + sShockFan[i], 0, FHGFIRE_LIGHTNING_SHOCK);
+    }
+    ZOP_GndRallyFlash(1.6f);
+    Actor_RequestQuakeAndRumble(&this->actor, play, 5, 12);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_HIT_THUNDER);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_THUNDER_GND);
+}
+
 void BossGanondrof_SetupCharge(BossGanondrof* this, PlayState* play) {
     this->fwork[GND_END_FRAME] = Animation_GetLastFrame(&gPhantomGanonChargeWindupAnim);
     Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonChargeWindupAnim, -3.0f);
     this->actionFunc = BossGanondrof_Charge;
     this->timers[0] = 20;
     this->work[GND_ACTION_STATE] = CHARGE_WINDUP;
+    if (ZOP_DifficultyEnabled()) {
+        // ZeldaOOTProject: a series of 2-3 charges (3 more often the weaker he gets)
+        sZopChargesLeft = (Rand_ZeroOne() < 0.3f + 0.5f * (1.0f - (s8)this->actor.colChkInfo.health /
+                                                                       (f32)GND_ZOP_PHASE2_HEALTH))
+                              ? 2
+                              : 1;
+        BossGanondrof_ZopChargeFlash(this, play);
+    }
 }
 
 void BossGanondrof_Charge(BossGanondrof* this, PlayState* play) {
@@ -1084,10 +1146,20 @@ void BossGanondrof_Charge(BossGanondrof* this, PlayState* play) {
 
             Actor_UpdateVelocityXYZ(thisx);
             Actor_UpdatePos(thisx);
-            Math_ApproachF(&thisx->speedXZ, 10.0f, 1.0f, 0.5f);
+            if (ZOP_DifficultyEnabled()) {
+                // faster, and crackling with lightning all over
+                Math_ApproachF(&thisx->speedXZ, ZOP_CHARGE_SPEED, 1.0f, 1.5f);
+                EffectSsFhgFlash_SpawnShock(play, thisx, &thisx->world.pos, 45, FHGFLASH_SHOCK_PG);
+                EffectSsFhgFlash_SpawnShock(play, thisx, &thisx->world.pos, 45, FHGFLASH_SHOCK_PG);
+            } else {
+                Math_ApproachF(&thisx->speedXZ, 10.0f, 1.0f, 0.5f);
+            }
             if ((sqrtf(SQ(dxCenter) + SQ(dzCenter)) > 280.0f) || (thisx->xyzDistToPlayerSq < SQ(100.0f))) {
                 this->work[GND_ACTION_STATE] = CHARGE_FINISH;
                 this->timers[0] = 20;
+                if (ZOP_DifficultyEnabled()) {
+                    BossGanondrof_ZopChargeImpact(this, play);
+                }
             }
             break;
         case CHARGE_FINISH:
@@ -1109,9 +1181,22 @@ void BossGanondrof_Charge(BossGanondrof* this, PlayState* play) {
                 Math_ApproachZeroF(&thisx->velocity.y, 1.0f, 2.0f);
                 Math_ApproachS(&thisx->shape.rot.y, thisx->yawTowardsPlayer, 5, 0x7D0);
                 if ((thisx->speedXZ <= 0.5f) && (fabsf(thisx->velocity.y) <= 0.1f)) {
-                    BossGanondrof_SetupNeutral(this, -10.0f);
-                    this->timers[0] = 30;
-                    this->flyMode = GND_FLY_NEUTRAL;
+                    if (ZOP_DifficultyEnabled() && (sZopChargesLeft > 0)) {
+                        // ZeldaOOTProject: turns around for the next charge of the series right away
+                        sZopChargesLeft--;
+                        this->work[GND_ACTION_STATE] = CHARGE_WINDUP;
+                        this->timers[0] = ZOP_CHARGE_REWINDUP;
+                        thisx->speedXZ = 0.0f;
+                        thisx->velocity.y = 0.0f;
+                        thisx->gravity = 0.0f;
+                        Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonChargeWindupAnim, -3.0f);
+                        BossGanondrof_ZopChargeFlash(this, play);
+                        Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_ATTACK);
+                    } else {
+                        BossGanondrof_SetupNeutral(this, -10.0f);
+                        this->timers[0] = 30;
+                        this->flyMode = GND_FLY_NEUTRAL;
+                    }
                 }
             }
             break;

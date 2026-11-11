@@ -23,7 +23,7 @@
 #define ZOP_GND_POWER_MAX_SPEED 28.0f
 #define ZOP_POWER_HITS actor.home.rot.z // power hits this ball has taken (raise its top speed)
 // Damage of a ball that hits Link (vanilla 0x10)
-#define ZOP_GND_BALL_DAMAGE 0x18
+#define ZOP_GND_BALL_DAMAGE 0x20
 // A ball he throws on the fly (not in a volley) and Link hits back starts a rally this often; otherwise it hits him
 #define ZOP_GND_FREE_BALL_RALLY 0.9f
 
