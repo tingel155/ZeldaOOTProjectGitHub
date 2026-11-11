@@ -14,6 +14,7 @@
 #include "soh/OTRGlobals.h"
 #include "soh/Enhancements/game-interactor/GameInteractor_Hooks.h"
 #include "soh/Enhancements/ZeldaOOTProject/ZeldaOOTProjectHooks.h"
+#include "objects/gameplay_keep/gameplay_keep.h"
 
 #define FLAGS                                                                                 \
     (ACTOR_FLAG_ATTENTION_ENABLED | ACTOR_FLAG_HOSTILE | ACTOR_FLAG_UPDATE_CULLING_DISABLED | \
@@ -213,6 +214,8 @@ void BossGanondrof_SetColliderPos(Vec3f* pos, ColliderCylinder* collider) {
 
 static s16 sZopBurstCooldown; // catch-and-burst attack, see below
 static s16 sZopPowerTimer;     // power hit, see below
+static s16 sZopPowerFlashTimer; // lens flare on the staff when it gets charged
+#define ZOP_POWER_FLASH_FRAMES 12
 
 void BossGanondrof_Init(Actor* thisx, PlayState* play) {
     s32 pad;
@@ -223,6 +226,7 @@ void BossGanondrof_Init(Actor* thisx, PlayState* play) {
     Actor_SetScale(&this->actor, 0.01f);
     sZopBurstCooldown = 200;
     sZopPowerTimer = 0;
+    sZopPowerFlashTimer = 0;
     SkelAnime_Init(play, &this->skelAnime, &gPhantomGanonSkel, &gPhantomGanonRideAnim, NULL, NULL, 0);
     if (this->actor.params < GND_FAKE_BOSS) {
         this->actor.params = GND_REAL_BOSS;
@@ -494,6 +498,8 @@ void BossGanondrof_ZopTryPowerUp(BossGanondrof* this, PlayState* play, s16 rally
     this->actor.child = &horse->actor;
     BossGanondrof_ZopPurpleSparks(this, play, 24, 20.0f, 10.0f);
     ZOP_GndRallyFlash(0.5f);
+    sZopPowerFlashTimer = ZOP_POWER_FLASH_FRAMES;
+    Audio_PlayActorSound2(&this->actor, NA_SE_EV_DIAMOND_SWITCH); // the same chime as Gohma's eye flash
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_STICK);
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_MASIC1);
 }
@@ -1527,6 +1533,9 @@ void BossGanondrof_Update(Actor* thisx, PlayState* play) {
     }
     if (this->actor.params == GND_REAL_BOSS) {
         BossGanondrof_ZopPowerUpdate(this, play);
+        if (sZopPowerFlashTimer > 0) {
+            sZopPowerFlashTimer--;
+        }
     }
     osSyncPrintf("MOVE START %d\n", this->actor.params);
     this->actor.flags &= ~ACTOR_FLAG_HOOKSHOT_PULLS_PLAYER;
@@ -1761,6 +1770,28 @@ void BossGanondrof_Draw(Actor* thisx, PlayState* play) {
     SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, BossGanondrof_OverrideLimbDraw, BossGanondrof_PostLimbDraw, this);
     osSyncPrintf("DRAW 22\n");
     POLY_OPA_DISP = Play_SetFog(play, POLY_OPA_DISP);
+
+    // ZeldaOOTProject: power hit charged, a short purple lens flare on the staff (like Gohma's eye flash): a round
+    // glow and a wide horizontal streak
+    if ((sZopPowerFlashTimer > 0) && (this->actor.params == GND_REAL_BOSS)) {
+        f32 t = (f32)sZopPowerFlashTimer / ZOP_POWER_FLASH_FRAMES; // 1 -> 0
+        f32 size = (0.35f + 0.65f * Math_SinF((1.0f - t) * 3.14159265f)) * 0.1f;
+        u8 alpha = (u8)(255.0f * CLAMP(t * 1.6f, 0.0f, 1.0f));
+
+        Gfx_SetupDL_25Xlu(play->state.gfxCtx);
+        gDPSetPrimColor(POLY_XLU_DISP++, 0, 0x80, 255, 235, 255, alpha);
+        gDPSetEnvColor(POLY_XLU_DISP++, 190, 80, 255, 0);
+        Matrix_Translate(this->spearTip.x, this->spearTip.y, this->spearTip.z, MTXMODE_NEW);
+        Matrix_Mult(&play->billboardMtxF, MTXMODE_APPLY);
+        Matrix_Push();
+        Matrix_Scale(size, size, 1.0f, MTXMODE_APPLY);
+        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_XLU_DISP++, gEffFlash1DL);
+        Matrix_Pop();
+        Matrix_Scale(size * 3.5f, size * 0.22f, 1.0f, MTXMODE_APPLY);
+        gSPMatrix(POLY_XLU_DISP++, MATRIX_NEWMTX(play->state.gfxCtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+        gSPDisplayList(POLY_XLU_DISP++, gEffFlash1DL);
+    }
     CLOSE_DISPS(play->state.gfxCtx);
     osSyncPrintf("DRAW END %d\n", this->actor.params);
 }
