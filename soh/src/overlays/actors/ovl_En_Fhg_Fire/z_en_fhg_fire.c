@@ -24,6 +24,8 @@
 #define ZOP_POWER_HITS actor.home.rot.z // power hits this ball has taken (raise its top speed)
 // Damage of a ball that hits Link (vanilla 0x10)
 #define ZOP_GND_BALL_DAMAGE 0x20
+// He hits the ball back when it is about this far from him (vanilla 150)
+#define ZOP_GND_RETURN_DIST 70.0f
 // A ball he throws on the fly (not in a volley) and Link hits back starts a rally this often; otherwise it hits him
 #define ZOP_GND_FREE_BALL_RALLY 0.9f
 
@@ -838,7 +840,10 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
             case FHGFIRE_LIGHT_BLUE:
                 if ((bossGnd->flyMode == GND_FLY_RETURN) && (this->work[FHGFIRE_RETURN_COUNT] < 100)) {
                     this->actor.world.rot.y = Math_FAtan2F(dxPG, dzPG) * (0x8000 / M_PI);
-                    if ((sqrtf(SQ(dxPG) + SQ(dzPG)) < (150.0f + (this->actor.speedXZ * 8.0f)))) {
+                    // His swing starts this far away and takes 8 frames, so the ball turns about the base distance
+                    // in front of him (ZeldaOOTProject: later, closer to him)
+                    if ((sqrtf(SQ(dxPG) + SQ(dzPG)) <
+                         ((ZOP_DifficultyEnabled() ? ZOP_GND_RETURN_DIST : 150.0f) + (this->actor.speedXZ * 8.0f)))) {
                         if (BossGanondrof_ZopTryCatch(bossGnd, play, this->ZOP_RALLY_HITS)) {
                             // ZeldaOOTProject: he catches it instead of hitting it back
                             this->work[FHGFIRE_FIRE_MODE] = ZOP_FHGFIRE_ABSORB;
