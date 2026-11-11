@@ -92,7 +92,8 @@ extern "C" int ZOP_TestGohmaEye(void) {
 }
 
 // Testing aid: Phantom Ganon skips his intro and painting phase and starts floating (gZOP.TestEnv.GanondrofPhase2)
-// Testing aid: Link is put into the arena and Phantom Ganon only does his staff slam (gZOP.TestEnv.GanondrofSlam)
+// Testing aid: Link is put into the arena and Phantom Ganon only does his staff slam (gZOP.TestEnv.GanondrofSlam = 1)
+// or only his floor shots (= 2)
 extern "C" int ZOP_TestGanondrofSlam(void) {
     return CVarGetInteger("gZOP.TestEnv.GanondrofSlam", 0);
 }
