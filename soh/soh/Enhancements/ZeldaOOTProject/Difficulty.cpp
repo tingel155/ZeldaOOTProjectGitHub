@@ -97,12 +97,6 @@ extern "C" int ZOP_TestGanondrofSlam(void) {
     return CVarGetInteger("gZOP.TestEnv.GanondrofSlam", 0);
 }
 
-// Testing aid: Link is put into the arena and Phantom Ganon casts his phase 2b spell right away
-// (gZOP.TestEnv.GanondrofTransition)
-extern "C" int ZOP_TestGanondrofTransition(void) {
-    return CVarGetInteger("gZOP.TestEnv.GanondrofTransition", 0);
-}
-
 extern "C" int ZOP_TestGanondrofPhase2(void) {
     return CVarGetInteger("gZOP.TestEnv.GanondrofPhase2", 0);
 }

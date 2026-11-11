@@ -217,20 +217,6 @@ static s16 sZopPowerTimer;     // power hit, see below (> 0: staff charged for t
 static s16 sZopPowerRaised;    // staff still held up (until his first charged return)
 static s16 sZopPowerFlashTimer; // lens flare on the staff when it gets charged
 static s16 sZopChargesLeft;     // charge attack: more charges to come in this series
-
-// ZeldaOOTProject phase 2b (see BossGanondrof_ZopTransition)
-static u8 sZopPhaseB;      // phase 2b reached: all ZeldaOOTProject changes are on
-static u8 sZopVoid;        // the arena is a platform over an abyss
-static f32 sZopFireAlpha;  // ring of fire at the edge of the platform
-static s16 sZopTransTimer; // frames into the spell cutscene
-static s16 sZopTransCam;
-#define GND_ZOP_ACTIVE() (ZOP_DifficultyEnabled() && sZopPhaseB)
-static void BossGanondrof_ZopSetupTransition(BossGanondrof* this, PlayState* play);
-static void BossGanondrof_ZopTransition(BossGanondrof* this, PlayState* play);
-
-s32 BossGanondrof_ZopPhaseB(void) {
-    return sZopPhaseB;
-}
 #define ZOP_GND_CHARGE_DAMAGE 0x20
 #define ZOP_CHARGE_SPEED 18.0f   // vanilla 10
 #define ZOP_CHARGE_REWINDUP 12   // wind-up frames between two charges of a series
@@ -250,10 +236,6 @@ void BossGanondrof_Init(Actor* thisx, PlayState* play) {
     sZopPowerTimer = 0;
     sZopPowerRaised = false;
     sZopPowerFlashTimer = 0;
-    sZopPhaseB = false;
-    sZopVoid = false;
-    sZopFireAlpha = 0.0f;
-    sZopTransCam = 0;
     SkelAnime_Init(play, &this->skelAnime, &gPhantomGanonSkel, &gPhantomGanonRideAnim, NULL, NULL, 0);
     if (this->actor.params < GND_FAKE_BOSS) {
         this->actor.params = GND_REAL_BOSS;
@@ -270,6 +252,11 @@ void BossGanondrof_Init(Actor* thisx, PlayState* play) {
     Collider_InitCylinder(play, &this->colliderSpear);
     Collider_SetCylinder(play, &this->colliderBody, &this->actor, &sCylinderInitBody);
     Collider_SetCylinder(play, &this->colliderSpear, &this->actor, &sCylinderInitSpear);
+    if (ZOP_DifficultyEnabled()) {
+        // ZeldaOOTProject: his charge attack hurts a lot more
+        this->colliderBody.info.toucher.damage = ZOP_GND_CHARGE_DAMAGE;
+        this->colliderSpear.info.toucher.damage = ZOP_GND_CHARGE_DAMAGE;
+    }
     this->actor.flags &= ~ACTOR_FLAG_ATTENTION_ENABLED;
     if (Flags_GetClear(play, play->roomCtx.curRoom.num)) {
         Actor_Kill(&this->actor);
@@ -518,7 +505,7 @@ void BossGanondrof_ZopTryPowerUp(BossGanondrof* this, PlayState* play, s16 rally
     // The farther Link is, the easier the rally, so the more likely the power hit: 5% up close, 80% from 600 on
     f32 chance = CLAMP((this->actor.xzDistToPlayer - ZOP_POWER_NEAR) / (ZOP_POWER_FAR - ZOP_POWER_NEAR), 0.05f, 0.8f);
 
-    if (!GND_ZOP_ACTIVE() || (sZopPowerTimer > 0) || (rallyHits < ZOP_POWER_MIN_HITS) ||
+    if (!ZOP_DifficultyEnabled() || (sZopPowerTimer > 0) || (rallyHits < ZOP_POWER_MIN_HITS) ||
         ((this->actionFunc != BossGanondrof_Neutral) && (this->actionFunc != BossGanondrof_Return)) ||
         (Rand_ZeroOne() > chance)) {
         return;
@@ -582,7 +569,7 @@ static void BossGanondrof_ZopPowerUpdate(BossGanondrof* this, PlayState* play) {
 }
 
 s32 BossGanondrof_ZopTryCatch(BossGanondrof* this, PlayState* play, s16 rallyHits) {
-    if (!GND_ZOP_ACTIVE() || (sZopBurstCooldown > 0) || (rallyHits < ZOP_BURST_MIN_HITS) ||
+    if (!ZOP_DifficultyEnabled() || (sZopBurstCooldown > 0) || (rallyHits < ZOP_BURST_MIN_HITS) ||
         (this->deathState != NOT_DEAD) || (this->actionFunc == BossGanondrof_Stunned) ||
         (Rand_ZeroOne() > ZOP_BURST_CHANCE)) {
         return false;
@@ -753,13 +740,13 @@ void BossGanondrof_Neutral(BossGanondrof* this, PlayState* play) {
             if (this->timers[0] == 0) {
                 this->timers[0] = (s16)(Rand_ZeroOne() * 64.0f) + 30;
                 rand01 = Rand_ZeroOne();
-                if (GND_ZOP_ACTIVE() && (rand01 < ZOP_CHARGE_CHANCE) && !ZOP_TestGanondrofSlam()) {
+                if (ZOP_DifficultyEnabled() && (rand01 < ZOP_CHARGE_CHANCE) && !ZOP_TestGanondrofSlam()) {
                     // ZeldaOOTProject: he flies at Link a lot more often (vanilla: only below 5 health)
                     this->flyMode = GND_FLY_CHARGE;
                     this->timers[0] = 60;
                     this->fwork[GND_FLOAT_SPEED] = 0.0f;
                     Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_LAUGH);
-                } else if (GND_ZOP_ACTIVE() &&
+                } else if (ZOP_DifficultyEnabled() &&
                            ((rand01 < ZOP_CHARGE_CHANCE + ZOP_SLAM_CHANCE) || ZOP_TestGanondrofSlam())) {
                     // ZeldaOOTProject: the staff slam with its rings, without a charge before it; afterwards he is open
                     // to attacks for a moment
@@ -793,10 +780,10 @@ void BossGanondrof_Neutral(BossGanondrof* this, PlayState* play) {
                 targetZ = GND_BOSSROOM_CENTER_Z;
             } else {
                 // ZeldaOOTProject: keeps more distance to Link (300 instead of 180 in front of him)
-                targetX = playerx->world.pos.x + ((GND_ZOP_ACTIVE() ? 300.0f : 180.0f) * Math_SinS(playerx->shape.rot.y));
-                targetZ = playerx->world.pos.z + ((GND_ZOP_ACTIVE() ? 300.0f : 180.0f) * Math_CosS(playerx->shape.rot.y));
+                targetX = playerx->world.pos.x + (ZOP_HARD(180.0f, 300.0f) * Math_SinS(playerx->shape.rot.y));
+                targetZ = playerx->world.pos.z + (ZOP_HARD(180.0f, 300.0f) * Math_CosS(playerx->shape.rot.y));
                 if (sqrtf(SQ(targetX - GND_BOSSROOM_CENTER_X) + SQ(targetZ - GND_BOSSROOM_CENTER_Z)) >
-                    (GND_ZOP_ACTIVE() ? 340.0f : 280.0f)) {
+                    ZOP_HARD(280.0f, 340.0f)) {
                     this->timers[1] = 50;
                     this->fwork[GND_FLOAT_SPEED] = 0.0f;
                 }
@@ -1056,185 +1043,6 @@ void BossGanondrof_Block(BossGanondrof* this, PlayState* play) {
     }
 }
 
-// ---------- ZeldaOOTProject: the spell between phase 2a and 2b. He rises to the middle of the room, raises his staff,
-// light streams into it, the screen goes black, and when it lights up again the arena is a platform over an abyss with
-// a ring of fire at its edge
-#define ZOP_TRANS_RAISE 22   // staff up
-#define ZOP_TRANS_DARKEN 38  // the screen starts to go black
-#define ZOP_TRANS_BLACK 56   // all black: the arena changes
-#define ZOP_TRANS_FIRE 66    // the fire flares up
-#define ZOP_TRANS_LIGHT 74   // the screen lights up again
-#define ZOP_TRANS_END 112
-
-static void BossGanondrof_ZopSetupTransition(BossGanondrof* this, PlayState* play) {
-    Actor* actor = play->actorCtx.actorLists[ACTORCAT_BOSS].head;
-
-    // no balls or lightning left over from phase 2a
-    while (actor != NULL) {
-        if ((actor->id == ACTOR_EN_FHG_FIRE) && (actor->params != FHGFIRE_WARP_DEATH)) {
-            Actor_Kill(actor);
-        }
-        actor = actor->next;
-    }
-    BossGanondrof_ZopEndPower();
-    ZOP_GndRallyGlow(0);
-    ZOP_GndRallyRain(false);
-
-    Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonNeutralAnim, -6.0f);
-    this->actionFunc = BossGanondrof_ZopTransition;
-    this->flyMode = GND_FLY_NEUTRAL;
-    this->actor.speedXZ = 0.0f;
-    this->actor.velocity.x = this->actor.velocity.y = this->actor.velocity.z = 0.0f;
-    this->actor.gravity = 0.0f;
-    this->shockTimer = 0;
-    sZopTransTimer = 0;
-
-    func_80064520(play, &play->csCtx);
-    Player_SetCsActionWithHaltedActors(play, &this->actor, 1);
-    sZopTransCam = Play_CreateSubCamera(play);
-    Play_ChangeCameraStatus(play, CAM_ID_MAIN, CAM_STAT_WAIT);
-    Play_ChangeCameraStatus(play, sZopTransCam, CAM_STAT_ACTIVE);
-    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_LAUGH);
-}
-
-static void BossGanondrof_ZopTransition(BossGanondrof* this, PlayState* play) {
-    Actor* thisx = &this->actor;
-    Player* player = GET_PLAYER(play);
-    f32 floorY = BossGanondrof_ZopFloorY(play, GND_BOSSROOM_CENTER_X, GND_BOSSROOM_CENTER_Z);
-    s16 t = ++sZopTransTimer;
-    s16 yawToLink = Math_FAtan2F(player->actor.world.pos.x - GND_BOSSROOM_CENTER_X,
-                                 player->actor.world.pos.z - GND_BOSSROOM_CENTER_Z) *
-                    (0x8000 / M_PI);
-    Vec3f eye;
-    Vec3f at;
-
-    SkelAnime_Update(&this->skelAnime);
-    Math_ApproachF(&thisx->world.pos.x, GND_BOSSROOM_CENTER_X, 0.12f, 14.0f);
-    Math_ApproachF(&thisx->world.pos.z, GND_BOSSROOM_CENTER_Z, 0.12f, 14.0f);
-    Math_ApproachF(&thisx->world.pos.y, floorY + 170.0f, 0.12f, 10.0f);
-    thisx->world.pos.y += 2.0f * Math_SinS(this->work[GND_VARIANCE_TIMER] * 1500);
-    Math_ApproachS(&thisx->shape.rot.y, thisx->yawTowardsPlayer, 5, 0x7D0);
-
-    if (t == ZOP_TRANS_RAISE) {
-        EnfHG* horse = (EnfHG*)thisx->child;
-
-        Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonChargeWindupAnim, -3.0f);
-        sZopPowerFlashTimer = ZOP_POWER_FLASH_FRAMES;
-        Actor_SpawnAsChild(&play->actorCtx, thisx, play, ACTOR_EN_FHG_FIRE, this->spearTip.x, this->spearTip.y,
-                           this->spearTip.z, ZOP_TRANS_BLACK - ZOP_TRANS_RAISE, FHGFIRE_LIGHT_GREEN, 0,
-                           FHGFIRE_SPEAR_LIGHT);
-        thisx->child = &horse->actor;
-        Audio_PlayActorSound2(thisx, NA_SE_EV_DIAMOND_SWITCH);
-        Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_MASIC1);
-        Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_VOICE);
-    }
-    if ((t > ZOP_TRANS_RAISE) && (t < ZOP_TRANS_BLACK)) {
-        // light streams into his staff from all around, purple sparks
-        Vec3f accel = { 0.0f, 0.0f, 0.0f };
-        s16 i;
-
-        for (i = 0; i < 3; i++) {
-            Vec3f pos;
-            Vec3f vel;
-            s16 yaw = (s16)(Rand_ZeroOne() * 0xFFFF);
-            s16 pitch = (s16)Rand_CenteredFloat(0x8000);
-            f32 r = 110.0f + Rand_ZeroOne() * 60.0f;
-
-            pos.x = this->spearTip.x + Math_SinS(yaw) * Math_CosS(pitch) * r;
-            pos.y = this->spearTip.y + Math_SinS(pitch) * r;
-            pos.z = this->spearTip.z + Math_CosS(yaw) * Math_CosS(pitch) * r;
-            vel.x = (this->spearTip.x - pos.x) / 9.0f;
-            vel.y = (this->spearTip.y - pos.y) / 9.0f;
-            vel.z = (this->spearTip.z - pos.z) / 9.0f;
-            EffectSsFhgFlash_SpawnLightBall(play, &pos, &vel, &accel, (s16)(Rand_ZeroOne() * 60.0f) + 120,
-                                            (i == 0) ? FHGFLASH_LIGHTBALL_LIGHTBLUE : FHGFLASH_LIGHTBALL_GREEN);
-        }
-        BossGanondrof_ZopPurpleSparks(this, play, 2, 40.0f, 3.0f);
-        this->shockTimer = 2;
-        Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_FLOAT - SFX_FLAG);
-    }
-
-    // black out, change the arena in the dark, light up again
-    play->envCtx.fillScreen = true;
-    play->envCtx.screenFillColor[0] = play->envCtx.screenFillColor[1] = play->envCtx.screenFillColor[2] = 0;
-    if (t < ZOP_TRANS_DARKEN) {
-        play->envCtx.screenFillColor[3] = 0;
-    } else if (t < ZOP_TRANS_BLACK) {
-        play->envCtx.screenFillColor[3] = (u8)(255 * (t - ZOP_TRANS_DARKEN) / (ZOP_TRANS_BLACK - ZOP_TRANS_DARKEN));
-    } else if (t < ZOP_TRANS_LIGHT) {
-        play->envCtx.screenFillColor[3] = 255;
-    } else {
-        s32 a = 255 - 255 * (t - ZOP_TRANS_LIGHT) / 20;
-        play->envCtx.screenFillColor[3] = (u8)CLAMP_MIN(a, 0);
-    }
-    if (t == ZOP_TRANS_BLACK) {
-        f32 dx = player->actor.world.pos.x - GND_BOSSROOM_CENTER_X;
-        f32 dz = player->actor.world.pos.z - GND_BOSSROOM_CENTER_Z;
-        f32 d = sqrtf(SQ(dx) + SQ(dz));
-
-        sZopVoid = true;
-        // Link has to stand inside the fire
-        if (d > ZOP_GND_FIRE_RADIUS - 60.0f) {
-            f32 k = (ZOP_GND_FIRE_RADIUS - 60.0f) / d;
-
-            player->actor.world.pos.x = GND_BOSSROOM_CENTER_X + dx * k;
-            player->actor.world.pos.z = GND_BOSSROOM_CENTER_Z + dz * k;
-            player->actor.world.pos.y = floorY;
-        }
-        Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_THUNDER);
-        Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_LAUGH);
-    }
-    if (t == ZOP_TRANS_FIRE) {
-        Audio_PlayActorSound2(thisx, NA_SE_EV_FLAME_IGNITION_GANON);
-    }
-    if (t >= ZOP_TRANS_FIRE) {
-        Math_ApproachF(&sZopFireAlpha, 1.0f, 1.0f, 0.06f);
-    }
-    if (t == ZOP_TRANS_LIGHT) {
-        Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonNeutralAnim, -6.0f);
-    }
-
-    // camera: from Link's side up at him while he casts, then high up over the new arena
-    if (t < ZOP_TRANS_BLACK) {
-        eye.x = GND_BOSSROOM_CENTER_X + Math_SinS(yawToLink) * 270.0f;
-        eye.y = floorY + 70.0f;
-        eye.z = GND_BOSSROOM_CENTER_Z + Math_CosS(yawToLink) * 270.0f;
-        at = this->spearTip;
-    } else {
-        eye.x = GND_BOSSROOM_CENTER_X + Math_SinS(yawToLink) * 280.0f;
-        eye.y = floorY + 300.0f;
-        eye.z = GND_BOSSROOM_CENTER_Z + Math_CosS(yawToLink) * 280.0f;
-        at.x = GND_BOSSROOM_CENTER_X - Math_SinS(yawToLink) * 60.0f;
-        at.y = floorY + 30.0f;
-        at.z = GND_BOSSROOM_CENTER_Z - Math_CosS(yawToLink) * 60.0f;
-    }
-    if (sZopTransCam != 0) {
-        Play_CameraSetAtEye(play, sZopTransCam, &at, &eye);
-    }
-
-    if (t >= ZOP_TRANS_END) {
-        Camera* camera = Play_GetCamera(play, CAM_ID_MAIN);
-
-        play->envCtx.fillScreen = false;
-        camera->eye = eye;
-        camera->eyeNext = eye;
-        camera->at = at;
-        func_800C08AC(play, sZopTransCam, 0);
-        sZopTransCam = 0;
-        func_80064534(play, &play->csCtx);
-        Player_SetCsActionWithHaltedActors(play, thisx, 7);
-
-        sZopPhaseB = true;
-        sZopFireAlpha = 1.0f;
-        // his charge attack hurts a lot more from now on
-        this->colliderBody.info.toucher.damage = ZOP_GND_CHARGE_DAMAGE;
-        this->colliderSpear.info.toucher.damage = ZOP_GND_CHARGE_DAMAGE;
-        BossGanondrof_SetupNeutral(this, -6.0f);
-        this->flyMode = GND_FLY_NEUTRAL;
-        this->timers[0] = 40;
-    }
-}
-
 // ZeldaOOTProject: the start of a charge: his staff flares up, lightning lashes out, he laughs
 static void BossGanondrof_ZopChargeFlash(BossGanondrof* this, PlayState* play) {
     static Color_RGBA8 boltPrim = { 255, 255, 255, 255 };
@@ -1417,7 +1225,7 @@ void BossGanondrof_SetupCharge(BossGanondrof* this, PlayState* play) {
     this->actionFunc = BossGanondrof_Charge;
     this->timers[0] = 20;
     this->work[GND_ACTION_STATE] = CHARGE_WINDUP;
-    if (GND_ZOP_ACTIVE()) {
+    if (ZOP_DifficultyEnabled()) {
         // ZeldaOOTProject: a series of 2-3 charges (3 more often the weaker he gets)
         sZopChargesLeft = (Rand_ZeroOne() < 0.3f + 0.5f * (1.0f - (s8)this->actor.colChkInfo.health /
                                                                        (f32)GND_ZOP_PHASE2_HEALTH))
@@ -1481,7 +1289,7 @@ void BossGanondrof_Charge(BossGanondrof* this, PlayState* play) {
 
             Actor_UpdateVelocityXYZ(thisx);
             Actor_UpdatePos(thisx);
-            if (GND_ZOP_ACTIVE()) {
+            if (ZOP_DifficultyEnabled()) {
                 // faster, and crackling with lightning all over
                 Math_ApproachF(&thisx->speedXZ, ZOP_CHARGE_SPEED, 1.0f, 1.5f);
                 EffectSsFhgFlash_SpawnShock(play, thisx, &thisx->world.pos, 45, FHGFLASH_SHOCK_PG);
@@ -1492,7 +1300,7 @@ void BossGanondrof_Charge(BossGanondrof* this, PlayState* play) {
             if ((sqrtf(SQ(dxCenter) + SQ(dzCenter)) > 280.0f) || (thisx->xyzDistToPlayerSq < SQ(100.0f))) {
                 this->work[GND_ACTION_STATE] = CHARGE_FINISH;
                 this->timers[0] = 20;
-                if (GND_ZOP_ACTIVE()) {
+                if (ZOP_DifficultyEnabled()) {
                     BossGanondrof_ZopChargeImpact(this, play);
                 }
             }
@@ -1516,7 +1324,7 @@ void BossGanondrof_Charge(BossGanondrof* this, PlayState* play) {
                 Math_ApproachZeroF(&thisx->velocity.y, 1.0f, 2.0f);
                 Math_ApproachS(&thisx->shape.rot.y, thisx->yawTowardsPlayer, 5, 0x7D0);
                 if ((thisx->speedXZ <= 0.5f) && (fabsf(thisx->velocity.y) <= 0.1f)) {
-                    if (GND_ZOP_ACTIVE() && (sZopChargesLeft > 0)) {
+                    if (ZOP_DifficultyEnabled() && (sZopChargesLeft > 0)) {
                         // ZeldaOOTProject: turns around for the next charge of the series right away
                         sZopChargesLeft--;
                         this->work[GND_ACTION_STATE] = CHARGE_WINDUP;
@@ -1527,7 +1335,7 @@ void BossGanondrof_Charge(BossGanondrof* this, PlayState* play) {
                         Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonChargeWindupAnim, -3.0f);
                         BossGanondrof_ZopChargeFlash(this, play);
                         Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_ATTACK);
-                    } else if (GND_ZOP_ACTIVE()) {
+                    } else if (ZOP_DifficultyEnabled()) {
                         BossGanondrof_ZopSetupFinale(this, play);
                     } else {
                         BossGanondrof_SetupNeutral(this, -10.0f);
@@ -1926,15 +1734,6 @@ void BossGanondrof_CollisionCheck(BossGanondrof* this, PlayState* play) {
                             return;
                         }
                     }
-                    if (ZOP_DifficultyEnabled() && !sZopPhaseB && (this->returnCount == 0) &&
-                        ((s8)this->actor.colChkInfo.health <= GND_ZOP_PHASEB_HEALTH)) {
-                        // ZeldaOOTProject: phase 2a is over, his spell turns the arena into an abyss
-                        this->work[GND_INVINC_TIMER] = 10;
-                        Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_DAMAGE);
-                        BossGanondrof_ZopSetupTransition(this, play);
-                        this->returnCount = 0;
-                        return;
-                    }
                     BossGanondrof_SetupStunned(this, play);
                     if (this->returnCount >= 2) {
                         this->timers[0] = 120;
@@ -1977,27 +1776,8 @@ void BossGanondrof_Update(Actor* thisx, PlayState* play) {
     if (sZopBurstCooldown > 0) {
         sZopBurstCooldown--;
     }
-    // ZeldaOOTProject testing aid (gZOP.TestEnv.GanondrofTransition): the spell right away
-    if (ZOP_TestGanondrofTransition() && ZOP_DifficultyEnabled() && !sZopPhaseB &&
-        (this->actor.params == GND_REAL_BOSS) && (this->flyMode != GND_FLY_PAINTING) &&
-        (this->actionFunc == BossGanondrof_Neutral) && (this->work[GND_VARIANCE_TIMER] > 240)) {
-        BossGanondrof_ZopSetupTransition(this, play);
-    }
-    // ZeldaOOTProject: the ring of fire burns Link and throws him back onto the platform
-    if (sZopVoid && (this->actor.params == GND_REAL_BOSS)) {
-        Player* zopPlayer = GET_PLAYER(play);
-        f32 dx = zopPlayer->actor.world.pos.x - GND_BOSSROOM_CENTER_X;
-        f32 dz = zopPlayer->actor.world.pos.z - GND_BOSSROOM_CENTER_Z;
-
-        if ((SQ(dx) + SQ(dz) > SQ(ZOP_GND_FIRE_RADIUS - 20.0f)) && (zopPlayer->invincibilityTimer == 0) &&
-            (sZopFireAlpha > 0.5f)) {
-            Actor_SetPlayerKnockback(play, &this->actor, 9.0f, (s16)(Math_FAtan2F(-dx, -dz) * (0x8000 / M_PI)), 8.0f,
-                                     PLAYER_KNOCKBACK_LARGE, 0x10);
-            Audio_PlayActorSound2(&zopPlayer->actor, NA_SE_EN_GANON_FIRE);
-        }
-    }
     // ZeldaOOTProject testing aid (gZOP.TestEnv.GanondrofSlam): Link is put into the arena (from the elevator below)
-    if ((ZOP_TestGanondrofSlam() || ZOP_TestGanondrofTransition()) && (this->actor.params == GND_REAL_BOSS) &&
+    if (ZOP_TestGanondrofSlam() && (this->actor.params == GND_REAL_BOSS) &&
         (GET_PLAYER(play)->actor.world.pos.y < GND_BOSSROOM_CENTER_Y - 50.0f)) {
         Player* zopPlayer = GET_PLAYER(play);
 
@@ -2250,10 +2030,6 @@ void BossGanondrof_Draw(Actor* thisx, PlayState* play) {
     SkelAnime_DrawSkeletonOpa(play, &this->skelAnime, BossGanondrof_OverrideLimbDraw, BossGanondrof_PostLimbDraw, this);
     osSyncPrintf("DRAW 22\n");
     POLY_OPA_DISP = Play_SetFog(play, POLY_OPA_DISP);
-
-    if ((this->actor.params == GND_REAL_BOSS) && (sZopVoid || (sZopFireAlpha > 0.0f))) {
-        ZOP_GndDrawVoid(play, sZopVoid ? 1.0f : 0.0f, sZopFireAlpha);
-    }
 
     // ZeldaOOTProject: power hit charged, a short light blue lens flare on the staff (like Gohma's eye flash): a round
     // glow and a wide horizontal streak

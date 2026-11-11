@@ -123,10 +123,6 @@ typedef struct BossGanondrof {
 #define GND_ZOP_BURST_BALL 1
 // Phase 2 health with ZeldaOOTProject difficulty (vanilla: 24)
 #define GND_ZOP_PHASE2_HEALTH 56
-// Phase 2 is split: 2a as in the original, then at this health (30% of it lost) his spell turns the arena into a
-// platform over an abyss with a ring of fire, and phase 2b with all the ZeldaOOTProject changes begins
-#define GND_ZOP_PHASEB_HEALTH 39
-s32 BossGanondrof_ZopPhaseB(void);
 // Power hit: now and then in a rally he raises his staff once, it flashes and gets a purple aura for the rest of the
 // rally, and his returns are a lot faster
 void BossGanondrof_ZopTryPowerUp(BossGanondrof* boss, PlayState* play, s16 rallyHits);

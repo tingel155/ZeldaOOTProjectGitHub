@@ -12,9 +12,6 @@
 #include "overlays/effects/ovl_Effect_Ss_Fhg_Flash/z_eff_ss_fhg_flash.h"
 #include "soh/Enhancements/ZeldaOOTProject/ZeldaOOTProjectHooks.h"
 
-// ZeldaOOTProject: Phantom Ganon's changes only apply in phase 2b (phase 2a plays as in the original)
-#define GND_ZOP_ACTIVE() (ZOP_DifficultyEnabled() && BossGanondrof_ZopPhaseB())
-
 // ZeldaOOTProject: Phantom Ganon's tennis gets longer in the course of the fight. At first he misses about as early as
 // in the original, with every bit of health he loses he keeps it up longer (see EnFhgFire_ZopMisses). The ball speeds
 // up as in the original, except for his power hits (staff raised, purple aura), which are a lot faster.
@@ -665,7 +662,7 @@ static u8 EnFhgFire_ZopBurstBall(EnFhgFire* this, PlayState* play, BossGanondrof
     if (dist <= 25.0f) {
         Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_HIT_THUNDER);
         Actor_SetPlayerKnockback(play, &this->actor, 3.0f, this->actor.world.rot.y, 0.0f, 3,
-                                             GND_ZOP_ACTIVE() ? ZOP_GND_BALL_DAMAGE : 0x10);
+                                             ZOP_DifficultyEnabled() ? ZOP_GND_BALL_DAMAGE : 0x10);
         return BALL_BURST;
     }
     return BALL_FIZZLE;
@@ -701,7 +698,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
         dzL = player->actor.world.pos.z - this->actor.world.pos.z;
         Actor_UpdateVelocityXYZ(&this->actor);
         Actor_UpdatePos(&this->actor);
-        if (GND_ZOP_ACTIVE()) {
+        if (ZOP_DifficultyEnabled()) {
             EnFhgFire_ZopRallyArc(this);
             EnFhgFire_ZopRallySound(this);
         }
@@ -767,7 +764,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                         Rumble_Request(this->actor.xyzDistToPlayerSq, 0xFF, 0x14, 0x96);
                     } else {
                         if (bossGnd->flyMode == GND_FLY_NEUTRAL) {
-                            if (GND_ZOP_ACTIVE()) {
+                            if (ZOP_DifficultyEnabled()) {
                                 // No more misses: mostly he takes it up and a rally starts, rarely it hits him
                                 angleModX = 0;
                                 angleModY = 0;
@@ -789,7 +786,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                             angleModX = 0;
                             angleModY = 0;
                             this->work[FHGFIRE_RETURN_COUNT]++;
-                            if (GND_ZOP_ACTIVE()) {
+                            if (ZOP_DifficultyEnabled()) {
                                 if (EnFhgFire_ZopMisses(bossGnd, this->work[FHGFIRE_RETURN_COUNT])) {
                                     this->work[FHGFIRE_RETURN_COUNT] = 100;
                                 }
@@ -816,7 +813,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                             angleModX;
                         this->work[FHGFIRE_FIRE_MODE] = FHGFIRE_LIGHT_BLUE;
                         this->work[FHGFIRE_FX_TIMER] = 2;
-                        if (GND_ZOP_ACTIVE()) {
+                        if (ZOP_DifficultyEnabled()) {
                             EnFhgFire_ZopRallyHit(this, play, bossGnd->targetPos.x, bossGnd->targetPos.y,
                                                   bossGnd->targetPos.z);
                             if (this->work[FHGFIRE_RETURN_COUNT] < 100) {
@@ -835,7 +832,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                         Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_LAUGH);
                     }
                     Actor_SetPlayerKnockback(play, &this->actor, 3.0f, this->actor.world.rot.y, 0.0f, 3,
-                                             GND_ZOP_ACTIVE() ? ZOP_GND_BALL_DAMAGE : 0x10);
+                                             ZOP_DifficultyEnabled() ? ZOP_GND_BALL_DAMAGE : 0x10);
                 }
                 break;
             case FHGFIRE_LIGHT_BLUE:
@@ -864,7 +861,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                     if ((fabsf(dxPG) < 30.0f) && (fabsf(dzPG) < 30.0f) && (fabsf(dyPG) < 45.0f)) {
                         killMode = BALL_IMPACT;
                         bossGnd->returnCount = this->work[FHGFIRE_RETURN_COUNT] + 1;
-                        if (GND_ZOP_ACTIVE()) {
+                        if (ZOP_DifficultyEnabled()) {
                             ZOP_GndRallyFlash(1.8f); // Phantom Ganon is hit: one big bright flash
                         }
                         Audio_PlaySfxGeneral(NA_SE_EN_FANTOM_HIT_THUNDER, &bossGnd->actor.projectedPos, 4,
@@ -930,13 +927,13 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                     this->actor.world.rot.x = Math_FAtan2F(dyL, dxzL) * (0x8000 / M_PI);
                     this->work[FHGFIRE_FIRE_MODE] = FHGFIRE_LIGHT_GREEN;
                     Audio_PlayActorSound2(&this->actor, NA_SE_IT_SWORD_REFLECT_MG);
-                    if (GND_ZOP_ACTIVE()) {
+                    if (ZOP_DifficultyEnabled()) {
                         EnFhgFire_ZopRallyHit(this, play, player->actor.world.pos.x,
                                               player->actor.world.pos.y + 40.0f,
                                               player->actor.world.pos.z);
                     }
-                    this->actor.speedXZ += GND_ZOP_ACTIVE() ? ZOP_GND_PHANTOM_SPEEDUP : 2.0f;
-                    if (GND_ZOP_ACTIVE() && BossGanondrof_ZopUsePower(bossGnd, play)) {
+                    this->actor.speedXZ += ZOP_DifficultyEnabled() ? ZOP_GND_PHANTOM_SPEEDUP : 2.0f;
+                    if (ZOP_DifficultyEnabled() && BossGanondrof_ZopUsePower(bossGnd, play)) {
                         this->actor.speedXZ +=
                             (this->ZOP_POWER_HITS == 0) ? ZOP_GND_POWER_SPEEDUP : ZOP_GND_POWER_SPEEDUP_MORE;
                         this->ZOP_POWER_HITS++;
@@ -1008,7 +1005,7 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
         Lights_PointNoGlowSetInfo(&this->lightInfo, (s16)this->actor.world.pos.x, (s16)this->actor.world.pos.y,
                                   (s16)this->actor.world.pos.z, 255, 255, 255, 200);
         {
-            f32 maxSpeed = GND_ZOP_ACTIVE()
+            f32 maxSpeed = ZOP_DifficultyEnabled()
                                ? CLAMP_MAX(ZOP_GND_MAX_SPEED + this->ZOP_POWER_HITS * ZOP_GND_POWER_SPEEDUP,
                                            ZOP_GND_POWER_MAX_SPEED)
                                : 20.0f;

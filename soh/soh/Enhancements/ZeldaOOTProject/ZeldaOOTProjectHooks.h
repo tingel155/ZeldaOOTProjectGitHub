@@ -50,10 +50,6 @@ int ZOP_IsGohmaFloorLane(short actorId);
 // Phantom Ganon phase 2: a glowing ring spreading over the floor from (x, y, z) that Link has to jump over
 // (GanondrofRings.cpp)
 void ZOP_SpawnGndRing(struct PlayState* play, float x, float y, float z, float maxRadius, float speed);
-// Phantom Ganon phase 2b: the abyss around the platform (voidOn > 0) and the ring of fire at its edge
-// (GanondrofVoid.cpp)
-#define ZOP_GND_FIRE_RADIUS 305.0f
-void ZOP_GndDrawVoid(struct PlayState* play, float voidOn, float fireAlpha);
 
 // z_player.c / z_en_elf.c: nonzero when Navi always flies next to Link and the A button no longer calls her in or
 // out (ModernControls.cpp)
@@ -112,8 +108,6 @@ int ZOP_TestGohmaEye(void);
 int ZOP_TestGanondrofPhase2(void);
 // Testing aid: Link is put into the arena and Phantom Ganon only does his staff slam
 int ZOP_TestGanondrofSlam(void);
-// Testing aid: Link is put into the arena and Phantom Ganon casts his phase 2b spell right away
-int ZOP_TestGanondrofTransition(void);
 
 #ifdef __cplusplus
 }
