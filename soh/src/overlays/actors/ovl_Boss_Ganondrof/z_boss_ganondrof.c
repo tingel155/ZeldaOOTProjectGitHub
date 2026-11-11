@@ -217,6 +217,9 @@ static s16 sZopPowerTimer;     // power hit, see below (> 0: staff charged for t
 static s16 sZopPowerRaised;    // staff still held up (until his first charged return)
 static s16 sZopPowerFlashTimer; // lens flare on the staff when it gets charged
 static s16 sZopChargesLeft;     // charge attack: more charges to come in this series
+#define ZOP_KNEEL_HEIGHT 38.0f      // his origin over the floor when kneeling after the staff slam (legs hanging)
+#define ZOP_RAGE_KNEEL_HEIGHT 31.0f // ... in the rage cutscene, legs as when stunned (measured: lowest point on the floor)
+static f32 BossGanondrof_ZopFloorY(PlayState* play, f32 x, f32 z);
 // The hard phase 2 (all ZeldaOOTProject changes) after phase 1.5 (the original second phase)
 static u8 sZopPhaseB;
 static s16 sZopRageTimer;      // frames into the cutscene between the two
@@ -1397,7 +1400,7 @@ static void BossGanondrof_ZopRage(BossGanondrof* this, PlayState* play) {
     static Color_RGBA8 boltEnv = { 120, 255, 160, 255 };
     Actor* thisx = &this->actor;
     Player* player = GET_PLAYER(play);
-    f32 floorY = BossGanondrof_ZopFloorY(play, GND_BOSSROOM_CENTER_X, GND_BOSSROOM_CENTER_Z);
+    f32 floorY = BossGanondrof_ZopFloorY(play, sZopRageBasePos.x, sZopRageBasePos.z);
     s16 t = ++sZopRageTimer;
     // seen from beside Link (not right behind his head)
     s16 yawToLink = Math_Vec3f_Yaw(&sZopRageBasePos, &player->actor.world.pos) + 0x2C00;
@@ -1418,7 +1421,7 @@ static void BossGanondrof_ZopRage(BossGanondrof* this, PlayState* play) {
             sZopRageBasePos.x = GND_BOSSROOM_CENTER_X + cx * (250.0f / cr);
             sZopRageBasePos.z = GND_BOSSROOM_CENTER_Z + cz * (250.0f / cr);
         }
-        Math_ApproachF(&sZopRageBasePos.y, floorY + 34.0f, 0.15f, 7.0f);
+        Math_ApproachF(&sZopRageBasePos.y, floorY + ZOP_RAGE_KNEEL_HEIGHT, 0.15f, 7.0f);
         thisx->world.pos = sZopRageBasePos;
         if (t == ZOP_RAGE_KNEEL) {
             Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_DAMAGE2);
@@ -1572,7 +1575,8 @@ static void BossGanondrof_ZopChargeFlash(BossGanondrof* this, PlayState* play) {
 // ZeldaOOTProject: height of the arena floor under (x, z) (not Link's height: he may be in the air or below)
 static f32 BossGanondrof_ZopFloorY(PlayState* play, f32 x, f32 z) {
     CollisionPoly* poly;
-    Vec3f pos = { x, GND_BOSSROOM_CENTER_Y + 300.0f, z };
+    // from just above the platform: from higher up the ray hits an invisible surface at y 0 (the floor is at -33)
+    Vec3f pos = { x, GND_BOSSROOM_CENTER_Y + 25.0f, z };
     f32 y = BgCheck_EntityRaycastFloor1(&play->colCtx, &poly, &pos);
 
     return (y > BGCHECK_Y_MIN) ? y : GND_BOSSROOM_CENTER_Y;
@@ -1605,7 +1609,6 @@ typedef enum {
 } ZopFinaleState;
 
 #define ZOP_FINALE_RING_RADIUS 650.0f
-#define ZOP_KNEEL_HEIGHT 38.0f // his origin over the floor when kneeling (stunned: y 5 over the floor at -33)
 
 static s16 sZopFinaleState;
 static s16 sZopFinaleTimer;
