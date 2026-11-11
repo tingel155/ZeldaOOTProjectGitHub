@@ -226,6 +226,7 @@ static s16 sZopRageTimer;      // frames into the cutscene between the two
 static s16 sZopRageCam;
 static Vec3f sZopRageBasePos;  // where he kneels (he trembles around it)
 static u8 sZopRageLinkFlip;     // Link is doing his backflip; held in the cutscene once he lands
+static Vec3f sZopRageTarget;    // where he comes down (near the middle of the room)
 #define GND_ZOP_ACTIVE() (ZOP_DifficultyEnabled() && sZopPhaseB)
 static void BossGanondrof_ZopSetupRage(BossGanondrof* this, PlayState* play);
 static void BossGanondrof_ZopRage(BossGanondrof* this, PlayState* play);
@@ -242,8 +243,8 @@ static u8 sZopAuraRed;      // red pulse on his body this frame
 #define ZOP_AURA_CHANCE 1.0f
 #define ZOP_AURA_FRAMES 40
 #define ZOP_AURA_RADIUS 75.0f
-#define ZOP_AURA_DAMAGE 0x18
-#define ZOP_GND_CHARGE_DAMAGE 0x28
+#define ZOP_AURA_DAMAGE 0x20
+#define ZOP_GND_CHARGE_DAMAGE 0x30
 #define ZOP_CHARGE_SPEED 18.0f   // vanilla 10
 #define ZOP_CHARGE_REWINDUP 12   // wind-up frames between two charges of a series
 #define ZOP_SLAM_CHANCE 0.2f     // chance of the staff slam on its own whenever he picks his next move
@@ -1363,9 +1364,33 @@ static void BossGanondrof_ZopSetupRage(BossGanondrof* this, PlayState* play) {
         f32 d = sqrtf(SQ(player->actor.world.pos.x - sZopRageBasePos.x) +
                       SQ(player->actor.world.pos.z - sZopRageBasePos.z));
 
+        Vec3f spot;
+        f32 nx;
+        f32 nz;
+
+        // he comes down near the middle of the room (the cutscene looks best there), Link hops to 190 from that
+        // spot: a backflip away if he is too close, a leap toward it if he is too far
+        {
+            f32 cx = sZopRageBasePos.x - GND_BOSSROOM_CENTER_X;
+            f32 cz = sZopRageBasePos.z - GND_BOSSROOM_CENTER_Z;
+            f32 cr = sqrtf(SQ(cx) + SQ(cz));
+            f32 k = (cr > 50.0f) ? 50.0f / cr : 1.0f;
+
+            sZopRageTarget.x = GND_BOSSROOM_CENTER_X + cx * k;
+            sZopRageTarget.z = GND_BOSSROOM_CENTER_Z + cz * k;
+        }
+        d = sqrtf(SQ(player->actor.world.pos.x - sZopRageTarget.x) + SQ(player->actor.world.pos.z - sZopRageTarget.z));
+        nx = (d > 1.0f) ? (player->actor.world.pos.x - sZopRageTarget.x) / d : 0.0f;
+        nz = (d > 1.0f) ? (player->actor.world.pos.z - sZopRageTarget.z) / d : 1.0f;
+        spot.x = sZopRageTarget.x + nx * 190.0f;
+        spot.y = player->actor.world.pos.y;
+        spot.z = sZopRageTarget.z + nz * 190.0f;
+        sZopRageTarget.y = sZopRageBasePos.y;
+
         sZopRageLinkFlip = false;
-        if (((d < 190.0f) || (ZOP_TestGanondrofSlam() == 3)) && (player->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
-            ZOP_PlayerBackflipAway(play, &sZopRageBasePos, CLAMP((190.0f - d) / 11.0f, 5.0f, 12.0f));
+        if (((Math_Vec3f_DistXZ(&player->actor.world.pos, &spot) > 25.0f) || (ZOP_TestGanondrofSlam() == 3)) &&
+            (player->actor.bgCheckFlags & BGCHECKFLAG_GROUND)) {
+            ZOP_PlayerHopTo(play, &spot, &sZopRageTarget);
             sZopRageLinkFlip = true;
         }
     }
@@ -1413,10 +1438,9 @@ static void BossGanondrof_ZopRage(BossGanondrof* this, PlayState* play) {
         f32 cz = sZopRageBasePos.z - GND_BOSSROOM_CENTER_Z;
         f32 cr = sqrtf(SQ(cx) + SQ(cz));
 
-        if (cr > 250.0f) {
-            sZopRageBasePos.x = GND_BOSSROOM_CENTER_X + cx * (250.0f / cr);
-            sZopRageBasePos.z = GND_BOSSROOM_CENTER_Z + cz * (250.0f / cr);
-        }
+        (void)cr;
+        Math_ApproachF(&sZopRageBasePos.x, sZopRageTarget.x, 0.12f, 8.0f);
+        Math_ApproachF(&sZopRageBasePos.z, sZopRageTarget.z, 0.12f, 8.0f);
         Math_ApproachF(&sZopRageBasePos.y, floorY + ZOP_RAGE_KNEEL_HEIGHT, 0.15f, 7.0f);
         thisx->world.pos = sZopRageBasePos;
         if (t == ZOP_RAGE_KNEEL) {
@@ -1571,6 +1595,7 @@ static void BossGanondrof_ZopRage(BossGanondrof* this, PlayState* play) {
         Player_SetCsActionWithHaltedActors(play, thisx, 7);
 
         sZopPhaseB = true;
+        thisx->colChkInfo.health = GND_ZOP_PHASEB_START; // full strength again for the hard phase
         // his charge attack hurts a lot more from now on
         this->colliderBody.info.toucher.damage = ZOP_GND_CHARGE_DAMAGE;
         this->colliderSpear.info.toucher.damage = ZOP_GND_CHARGE_DAMAGE;
@@ -1765,7 +1790,7 @@ void BossGanondrof_SetupCharge(BossGanondrof* this, PlayState* play) {
     if (GND_ZOP_ACTIVE()) {
         // ZeldaOOTProject: a series of 2-3 charges (3 more often the weaker he gets)
         sZopChargesLeft = (Rand_ZeroOne() < 0.3f + 0.5f * (1.0f - (s8)this->actor.colChkInfo.health /
-                                                                       (f32)GND_ZOP_PHASE2_HEALTH))
+                                                                       (f32)GND_ZOP_PHASEB_START))
                               ? 2
                               : 1;
         BossGanondrof_ZopChargeFlash(this, play);
@@ -2341,6 +2366,7 @@ void BossGanondrof_Update(Actor* thisx, PlayState* play) {
     }
     if ((ZOP_TestGanondrofPhase2() == 2) && !sZopPhaseB && (this->actor.params == GND_REAL_BOSS)) {
         sZopPhaseB = true;
+        this->actor.colChkInfo.health = GND_ZOP_PHASEB_START;
         this->colliderBody.info.toucher.damage = ZOP_GND_CHARGE_DAMAGE;
         this->colliderSpear.info.toucher.damage = ZOP_GND_CHARGE_DAMAGE;
     }

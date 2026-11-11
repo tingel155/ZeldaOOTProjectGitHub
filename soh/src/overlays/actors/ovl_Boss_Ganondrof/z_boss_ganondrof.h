@@ -134,6 +134,8 @@ void BossGanondrof_SetupReturn(BossGanondrof* boss, PlayState* play);
 // Phase 1.5 (the original second phase, as in vanilla) ends at this health (30% lost); a cutscene (he falls, kneels,
 // trembles with electricity and breaks loose with a hail of balls) starts the hard phase 2 with all the changes
 #define GND_ZOP_PHASEB_HEALTH 39
+// ... and the hard phase 2 starts with this health
+#define GND_ZOP_PHASEB_START 56
 s32 BossGanondrof_ZopPhaseB(void);
 // The balls of that outburst: only for show, they fly off and burst
 #define GND_ZOP_SHOW_BALL 4

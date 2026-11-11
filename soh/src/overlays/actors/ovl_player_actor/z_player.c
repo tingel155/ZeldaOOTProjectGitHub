@@ -6348,13 +6348,17 @@ void func_8083BCD0(Player* this, PlayState* play, s32 controlStickDirection) {
     Player_PlaySfx(this, ((controlStickDirection << 0xE) == 0x8000) ? NA_SE_PL_ROLL : NA_SE_PL_SKIP);
 }
 
-// ZeldaOOTProject: Link faces `from` and does a backflip away from it, flying back at `speed` (cutscenes)
-void ZOP_PlayerBackflipAway(PlayState* play, Vec3f* from, f32 speed) {
+// ZeldaOOTProject: Link faces `face` and hops over to `spot` (cutscenes): a backflip when the spot is farther from
+// `face`, else a leap toward it. One hop covers up to about 170.
+void ZOP_PlayerHopTo(PlayState* play, Vec3f* spot, Vec3f* face) {
     Player* this = GET_PLAYER(play);
+    f32 dist = Math_Vec3f_DistXZ(&this->actor.world.pos, spot);
+    s32 away = Math_Vec3f_DistXZ(spot, face) > Math_Vec3f_DistXZ(&this->actor.world.pos, face);
 
-    this->actor.shape.rot.y = this->actor.world.rot.y = Math_Vec3f_Yaw(&this->actor.world.pos, from);
-    func_8083BCD0(this, play, PLAYER_STICK_DIR_BACKWARD);
-    this->linearVelocity = speed;
+    this->actor.shape.rot.y = this->actor.world.rot.y = Math_Vec3f_Yaw(&this->actor.world.pos, face);
+    func_8083BCD0(this, play, away ? PLAYER_STICK_DIR_BACKWARD : PLAYER_STICK_DIR_FORWARD);
+    this->yaw = Math_Vec3f_Yaw(&this->actor.world.pos, spot);
+    this->linearVelocity = CLAMP(dist / 12.0f, 2.0f, 14.0f);
 }
 
 s32 Player_ActionHandler_10(Player* this, PlayState* play) {

@@ -102,7 +102,7 @@ void GndRing_Update(Actor* thisx, PlayState* play) {
         if (onFloor && (fabsf(dist - self->radius) < kHitBand) && (player->invincibilityTimer == 0) &&
             (gSaveContext.nayrusLoveTimer == 0)) {
             self->hitLink = true;
-            Actor_SetPlayerKnockback(play, thisx, 4.0f, (s16)(atan2f(dx, dz) * (0x8000 / kPi)), 6.0f, 3, 0x18);
+            Actor_SetPlayerKnockback(play, thisx, 4.0f, (s16)(atan2f(dx, dz) * (0x8000 / kPi)), 6.0f, 3, 0x20);
             Audio_PlayActorSound2(&player->actor, NA_SE_EN_FANTOM_HIT_THUNDER);
         }
     }

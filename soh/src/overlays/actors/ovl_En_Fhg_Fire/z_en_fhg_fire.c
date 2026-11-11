@@ -26,9 +26,9 @@
 #define ZOP_GND_POWER_MAX_SPEED 28.0f
 #define ZOP_POWER_HITS actor.home.rot.z // power hits this ball has taken (raise its top speed)
 // Damage of a ball that hits Link (vanilla 0x10)
-#define ZOP_GND_BALL_DAMAGE 0x28
+#define ZOP_GND_BALL_DAMAGE 0x30
 // Damage of the shock Link gets when he blocks a ball with his shield
-#define ZOP_GND_SHIELD_DAMAGE 0x18
+#define ZOP_GND_SHIELD_DAMAGE 0x20
 // He hits the ball back when it is about this far from him (vanilla 150). So that fast balls can't fly through him
 // before his swing lands, the ball slows down during his swing to arrive right in front of his staff
 #define ZOP_GND_RETURN_DIST 70.0f
@@ -602,7 +602,7 @@ void EnFhgFire_SpearLight(EnFhgFire* this, PlayState* play) {
 // Does Phantom Ganon miss this return (returnCount = Link's returns so far)? Early in phase 2: possible from the 3rd on
 // (50%), for sure from the 4th; at the end: from the 9th (30%), for sure from the 12th.
 static s32 EnFhgFire_ZopMisses(BossGanondrof* bossGnd, s16 returnCount) {
-    f32 p = CLAMP(1.0f - (s8)bossGnd->actor.colChkInfo.health / (f32)GND_ZOP_PHASE2_HEALTH, 0.0f, 1.0f);
+    f32 p = CLAMP(1.0f - (s8)bossGnd->actor.colChkInfo.health / (f32)GND_ZOP_PHASEB_START, 0.0f, 1.0f);
     s16 minReturns = 2 + (s16)(p * 6.0f + 0.5f);
     s16 sureMiss = 4 + (s16)(p * 8.0f + 0.5f);
     f32 chance = 0.5f - 0.2f * p;
@@ -847,7 +847,8 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
                                              &gSfxDefaultFreqAndVolScale, &gSfxDefaultFreqAndVolScale,
                                              &gSfxDefaultReverb);
                         Rumble_Request(this->actor.xyzDistToPlayerSq, 0xFF, 0x14, 0x96);
-                        if (GND_ZOP_ACTIVE() && (player->invincibilityTimer == 0)) {
+                        // (from phase 1.5 on, not only in the hard phase: it is the same steel shield)
+                        if (ZOP_DifficultyEnabled() && (player->invincibilityTimer == 0)) {
                             // ZeldaOOTProject: the ball is electric and the shield is steel: blocking it gives Link a
                             // shock (thrown back, electrified, damage)
                             Actor_SetPlayerKnockback(play, &this->actor, 4.0f, this->actor.world.rot.y, 4.0f,
