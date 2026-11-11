@@ -1343,7 +1343,7 @@ static void BossGanondrof_ZopSetupRage(BossGanondrof* this, PlayState* play) {
     ZOP_GndRallyGlow(0);
     ZOP_GndRallyRain(false);
 
-    Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonAirDamageAnim, 0.0f);
+    Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonStunnedAnim, -10.0f);
     this->actionFunc = BossGanondrof_ZopRage;
     this->flyMode = GND_FLY_NEUTRAL;
     this->actor.speedXZ = 0.0f;
@@ -1397,7 +1397,7 @@ static void BossGanondrof_ZopRage(BossGanondrof* this, PlayState* play) {
     static Color_RGBA8 boltEnv = { 120, 255, 160, 255 };
     Actor* thisx = &this->actor;
     Player* player = GET_PLAYER(play);
-    f32 floorY = BossGanondrof_ZopFloorY(play, sZopRageBasePos.x, sZopRageBasePos.z);
+    f32 floorY = BossGanondrof_ZopFloorY(play, GND_BOSSROOM_CENTER_X, GND_BOSSROOM_CENTER_Z);
     s16 t = ++sZopRageTimer;
     // seen from beside Link (not right behind his head)
     s16 yawToLink = Math_Vec3f_Yaw(&sZopRageBasePos, &player->actor.world.pos) + 0x2C00;
@@ -1409,11 +1409,18 @@ static void BossGanondrof_ZopRage(BossGanondrof* this, PlayState* play) {
     Math_ApproachS(&thisx->shape.rot.y, thisx->yawTowardsPlayer, 5, 0x7D0);
 
     if (t < ZOP_RAGE_BURST) {
-        // down to the floor, kneeling
-        Math_ApproachF(&sZopRageBasePos.y, floorY + 38.0f, 0.15f, 7.0f);
+        // down to the floor of the platform, kneeling (same height as when a ball stuns him)
+        f32 cx = sZopRageBasePos.x - GND_BOSSROOM_CENTER_X;
+        f32 cz = sZopRageBasePos.z - GND_BOSSROOM_CENTER_Z;
+        f32 cr = sqrtf(SQ(cx) + SQ(cz));
+
+        if (cr > 250.0f) {
+            sZopRageBasePos.x = GND_BOSSROOM_CENTER_X + cx * (250.0f / cr);
+            sZopRageBasePos.z = GND_BOSSROOM_CENTER_Z + cz * (250.0f / cr);
+        }
+        Math_ApproachF(&sZopRageBasePos.y, floorY + 34.0f, 0.15f, 7.0f);
         thisx->world.pos = sZopRageBasePos;
         if (t == ZOP_RAGE_KNEEL) {
-            Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonStunnedAnim, -8.0f);
             Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_DAMAGE2);
             Actor_RequestQuakeAndRumble(thisx, play, 3, 6);
         }
@@ -2373,10 +2380,8 @@ void BossGanondrof_Update(Actor* thisx, PlayState* play) {
     Math_ApproachF(&this->legRotZ, legRotTargetZ, 1.0f, 600.0f);
     if ((this->flyMode != GND_FLY_PAINTING) && (this->actionFunc != BossGanondrof_Stunned) &&
         (this->deathState == NOT_DEAD) &&
-        // ZeldaOOTProject: kneeling, not floating, in the rage cutscene and after his staff slam
-        !((this->actionFunc == BossGanondrof_ZopRage) && (sZopRageTimer >= ZOP_RAGE_KNEEL - 6) &&
-          (sZopRageTimer < ZOP_RAGE_BURST)) &&
-        !((this->actionFunc == BossGanondrof_ZopFinale) && sZopFinaleAlone && (sZopFinaleState >= ZOP_FINALE_RINGS))) {
+        // ZeldaOOTProject: kneeling as when stunned in the rage cutscene
+        !((this->actionFunc == BossGanondrof_ZopRage) && (sZopRageTimer < ZOP_RAGE_BURST))) {
         legSplitTarget = (Math_SinS(this->work[GND_VARIANCE_TIMER] * 0x8DC) * -500.0f) - 500.0f;
     } else {
         legSplitTarget = 0.0f;
