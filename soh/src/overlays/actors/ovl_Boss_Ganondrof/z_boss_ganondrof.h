@@ -121,6 +121,9 @@ typedef struct BossGanondrof {
 // ZeldaOOTProject: catch-and-burst attack. He catches the ball of a rally, takes it in and bursts into several balls
 // (marked with this world.rot.z) that only a spin attack or Nayru's Love sends back.
 #define GND_ZOP_BURST_BALL 1
+// The big ball of his floor-shot attack that floats over the middle of the room and fires balls into the floor
+#define GND_ZOP_MOTHER_BALL 2
+#define GND_ZOP_MOTHER_HEIGHT 210.0f // over the arena floor
 // Phase 2 health with ZeldaOOTProject difficulty (vanilla: 24)
 #define GND_ZOP_PHASE2_HEALTH 56
 // Power hit: now and then in a rally he raises his staff once, it flashes and gets a purple aura for the rest of the

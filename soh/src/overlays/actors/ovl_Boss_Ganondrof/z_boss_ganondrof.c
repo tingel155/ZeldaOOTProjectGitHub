@@ -233,11 +233,14 @@ static u8 sZopAuraRed;      // red pulse on his body this frame
 #define ZOP_SLAM_CHANCE 0.2f     // chance of the staff slam on its own whenever he picks his next move
 static void BossGanondrof_ZopSetupFinale(BossGanondrof* this, PlayState* play);
 // Floor shots: he fires 2-4 balls one after another into the floor in front of Link, each one sends out a ring that
-// Link has to jump over
+// Link has to jump over. He throws a big ball up over the middle of the room, and the balls come from there while he
+// just floats and watches
 #define ZOP_FLOORSHOT_CHANCE 0.15f // chance whenever he picks his next move
 #define ZOP_FLOORSHOT_INTERVAL 24  // frames between two shots
 static s16 sZopShotsLeft;
 static s16 sZopShotTimer;
+static Actor* sZopMotherBall;
+static void BossGanondrof_ZopEndMotherBall(PlayState* play);
 static void BossGanondrof_ZopSetupFloorShots(BossGanondrof* this, PlayState* play);
 static u8 sZopFinaleAlone; // open to attacks after the staff slam (kneeling); set for every slam
 #define ZOP_POWER_FLASH_FRAMES 12
@@ -253,6 +256,7 @@ void BossGanondrof_Init(Actor* thisx, PlayState* play) {
     sZopPowerTimer = 0;
     sZopPowerRaised = false;
     sZopPowerFlashTimer = 0;
+    sZopMotherBall = NULL;
     SkelAnime_Init(play, &this->skelAnime, &gPhantomGanonSkel, &gPhantomGanonRideAnim, NULL, NULL, 0);
     if (this->actor.params < GND_FAKE_BOSS) {
         this->actor.params = GND_REAL_BOSS;
@@ -737,40 +741,88 @@ static void BossGanondrof_ZopBurst(BossGanondrof* this, PlayState* play) {
 static void BossGanondrof_ZopFloorShots(BossGanondrof* this, PlayState* play);
 
 static void BossGanondrof_ZopSetupFloorShots(BossGanondrof* this, PlayState* play) {
+    EnfHG* horse = (EnfHG*)this->actor.child;
+
     this->actionFunc = BossGanondrof_ZopFloorShots;
     sZopShotsLeft = 2 + (s16)(Rand_ZeroOne() * 2.99f);
-    sZopShotTimer = 10;
-    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_LAUGH);
+    sZopShotTimer = 0;
+    // the big ball, thrown up over the middle of the room
+    this->fwork[GND_END_FRAME] = Animation_GetLastFrame(&gPhantomGanonThrowEndAnim);
+    Animation_MorphToPlayOnce(&this->skelAnime, &gPhantomGanonThrowEndAnim, -2.0f);
+    sZopMotherBall = Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_FHG_FIRE, this->spearTip.x,
+                                        this->spearTip.y, this->spearTip.z, 0, 0, GND_ZOP_MOTHER_BALL,
+                                        FHGFIRE_ENERGY_BALL);
+    this->actor.child = &horse->actor;
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_MASIC1);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_VOICE);
+}
+
+// The big ball is gone: a burst of light where it was
+static void BossGanondrof_ZopEndMotherBall(PlayState* play) {
+    if (sZopMotherBall != NULL) {
+        Vec3f accel = { 0.0f, -0.3f, 0.0f };
+        s16 i;
+
+        for (i = 0; i < 30; i++) {
+            Vec3f vel = { Rand_CenteredFloat(18.0f), Rand_CenteredFloat(18.0f), Rand_CenteredFloat(18.0f) };
+
+            EffectSsFhgFlash_SpawnLightBall(play, &sZopMotherBall->world.pos, &vel, &accel,
+                                            (s16)(Rand_ZeroOne() * 80.0f) + 120, FHGFLASH_LIGHTBALL_GREEN);
+        }
+        Audio_PlayActorSound2(sZopMotherBall, NA_SE_EN_FANTOM_THUNDER);
+        Actor_Kill(sZopMotherBall);
+        sZopMotherBall = NULL;
+    }
 }
 
 static void BossGanondrof_ZopFloorShots(BossGanondrof* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
+    Actor* mother = sZopMotherBall;
+    Vec3f motherTarget = { GND_BOSSROOM_CENTER_X, GND_BOSSROOM_CENTER_Y + GND_ZOP_MOTHER_HEIGHT,
+                           GND_BOSSROOM_CENTER_Z };
 
     SkelAnime_Update(&this->skelAnime);
-    this->actor.world.pos.x += this->actor.velocity.x;
-    this->actor.world.pos.z += this->actor.velocity.z;
+    if (Animation_OnFrame(&this->skelAnime, this->fwork[GND_END_FRAME])) {
+        Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonNeutralAnim, -6.0f);
+    }
+    // he just floats about and watches
+    this->actor.world.pos.x += this->actor.velocity.x + Math_SinS(this->work[GND_VARIANCE_TIMER] * 0x300) * 1.2f;
+    this->actor.world.pos.z += this->actor.velocity.z + Math_CosS(this->work[GND_VARIANCE_TIMER] * 0x380) * 1.2f;
     Math_ApproachZeroF(&this->actor.velocity.x, 1.0f, 0.5f);
     Math_ApproachZeroF(&this->actor.velocity.z, 1.0f, 0.5f);
     this->actor.world.pos.y += 2.0f * Math_SinS(this->work[GND_VARIANCE_TIMER] * 1500);
     Math_ApproachS(&this->actor.shape.rot.y, this->actor.yawTowardsPlayer, 5, 0x7D0);
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_FLOAT - SFX_FLAG);
 
+    if ((mother == NULL) || (mother->update == NULL)) {
+        sZopMotherBall = NULL;
+        BossGanondrof_SetupNeutral(this, -6.0f);
+        this->flyMode = GND_FLY_NEUTRAL;
+        this->timers[0] = 30;
+        return;
+    }
+    // wait until it has arrived over the middle of the room
+    if ((sZopShotsLeft > 0) && (Math_Vec3f_DistXYZ(&mother->world.pos, &motherTarget) > 25.0f)) {
+        sZopShotTimer = 15;
+        return;
+    }
     if (sZopShotTimer > 0) {
         sZopShotTimer--;
         return;
     }
     if (sZopShotsLeft <= 0) {
+        BossGanondrof_ZopEndMotherBall(play);
         BossGanondrof_SetupNeutral(this, -6.0f);
         this->flyMode = GND_FLY_NEUTRAL;
         this->timers[0] = 30;
         return;
     }
 
-    // A shot: a spot on the floor between him and Link, a bit in front of Link and to the side, so the ring
-    // reaches Link soon but not at once
+    // A shot from the big ball: a spot on the floor a bit in front of Link (seen from the ball) and to the side, so the
+    // ring reaches Link soon but not at once
     {
         EnfHG* horse = (EnfHG*)this->actor.child;
-        s16 yawLinkToHim = Math_Vec3f_Yaw(&player->actor.world.pos, &this->actor.world.pos);
+        s16 yawLinkToBall = Math_Vec3f_Yaw(&player->actor.world.pos, &mother->world.pos);
         f32 ahead = 90.0f + Rand_ZeroOne() * 130.0f;
         f32 side = Rand_CenteredFloat(160.0f);
         Vec3f spot;
@@ -779,12 +831,11 @@ static void BossGanondrof_ZopFloorShots(BossGanondrof* this, PlayState* play) {
         f32 dz;
         Actor* ball;
 
-        spot.x = player->actor.world.pos.x + Math_SinS(yawLinkToHim) * ahead + Math_CosS(yawLinkToHim) * side;
+        spot.x = player->actor.world.pos.x + Math_SinS(yawLinkToBall) * ahead + Math_CosS(yawLinkToBall) * side;
         spot.y = player->actor.world.pos.y;
-        spot.z = player->actor.world.pos.z + Math_CosS(yawLinkToHim) * ahead - Math_SinS(yawLinkToHim) * side;
-        Animation_MorphToPlayOnce(&this->skelAnime, &gPhantomGanonThrowEndAnim, -2.0f);
-        ball = Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_FHG_FIRE, this->spearTip.x,
-                                  this->spearTip.y, this->spearTip.z, 0, 0, 0, FHGFIRE_ENERGY_BALL);
+        spot.z = player->actor.world.pos.z + Math_CosS(yawLinkToBall) * ahead - Math_SinS(yawLinkToBall) * side;
+        ball = Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_FHG_FIRE, mother->world.pos.x,
+                                  mother->world.pos.y, mother->world.pos.z, 0, 0, 0, FHGFIRE_ENERGY_BALL);
         this->actor.child = &horse->actor;
         if (ball != NULL) {
             dx = spot.x - ball->world.pos.x;
@@ -794,8 +845,7 @@ static void BossGanondrof_ZopFloorShots(BossGanondrof* this, PlayState* play) {
             ball->world.rot.x = (s16)(Math_FAtan2F(dy, sqrtf(SQ(dx) + SQ(dz))) * (0x8000 / M_PI));
             ball->speedXZ = 11.0f;
         }
-        Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_MASIC2);
-        Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_VOICE);
+        Audio_PlayActorSound2(mother, NA_SE_EN_FANTOM_MASIC2);
         sZopShotsLeft--;
         sZopShotTimer = (sZopShotsLeft > 0) ? ZOP_FLOORSHOT_INTERVAL + (s16)Rand_CenteredFloat(8.0f) : 40;
     }
@@ -1136,6 +1186,7 @@ static void BossGanondrof_ZopAura(BossGanondrof* this, PlayState* play) {
 }
 
 void BossGanondrof_SetupStunned(BossGanondrof* this, PlayState* play) {
+    BossGanondrof_ZopEndMotherBall(play);
     if (this->actionFunc != BossGanondrof_Stunned) {
         sZopAuraPlanned = ZOP_DifficultyEnabled() && (Rand_ZeroOne() < ZOP_AURA_CHANCE);
         sZopAuraDelay = 10 + (s16)(Rand_ZeroOne() * 40.0f);

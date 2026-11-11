@@ -672,6 +672,42 @@ static u8 EnFhgFire_ZopBurstBall(EnFhgFire* this, PlayState* play, BossGanondrof
     return BALL_FIZZLE;
 }
 
+/**
+ * ZeldaOOTProject: the big ball of Phantom Ganon's floor shots. It flies up over the middle of the room and floats
+ * there, pulsing, while he fires balls from it into the floor (see BossGanondrof_ZopFloorShots, which also ends it).
+ * It can't be hit and hurts no one.
+ */
+static void EnFhgFire_ZopMotherBall(EnFhgFire* this, PlayState* play) {
+    Vec3f target = { GND_BOSSROOM_CENTER_X, GND_BOSSROOM_CENTER_Y + GND_ZOP_MOTHER_HEIGHT, GND_BOSSROOM_CENTER_Z };
+    Vec3f accel = { 0.0f, 0.0f, 0.0f };
+    f32 pulse = 9.0f + 1.5f * Math_SinS(this->work[FHGFIRE_VARIANCE_TIMER] * 0x1800);
+    s16 i;
+
+    Math_ApproachF(&this->actor.world.pos.x, target.x, 0.15f, 16.0f);
+    Math_ApproachF(&this->actor.world.pos.y, target.y, 0.15f, 16.0f);
+    Math_ApproachF(&this->actor.world.pos.z, target.z, 0.15f, 16.0f);
+    this->actor.world.pos.y += 1.5f * Math_SinS(this->work[FHGFIRE_VARIANCE_TIMER] * 0x600);
+    Actor_SetScale(&this->actor, pulse);
+    this->actor.shape.rot.z += (s16)(Rand_ZeroOne() * 0x4E20) + 0x4000;
+    for (i = 0; i < 3; i++) {
+        Vec3f pos = { this->actor.world.pos.x + Rand_CenteredFloat(40.0f),
+                      this->actor.world.pos.y + Rand_CenteredFloat(40.0f),
+                      this->actor.world.pos.z + Rand_CenteredFloat(40.0f) };
+        Vec3f vel = { 0.0f, 0.0f, 0.0f };
+
+        EffectSsFhgFlash_SpawnLightBall(play, &pos, &vel, &accel, (s16)(Rand_ZeroOne() * 80.0f) + 160,
+                                        FHGFLASH_LIGHTBALL_GREEN);
+    }
+    Lights_PointNoGlowSetInfo(&this->lightInfo, (s16)this->actor.world.pos.x, (s16)this->actor.world.pos.y,
+                              (s16)this->actor.world.pos.z, 200, 255, 200, 350);
+    Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_FIRE - SFX_FLAG);
+    // in case Phantom Ganon doesn't end it
+    this->ZOP_ABSORB_START_DIST += 1.0f;
+    if (this->ZOP_ABSORB_START_DIST > 2000.0f) {
+        Actor_Kill(&this->actor);
+    }
+}
+
 void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
     f32 dxL;
     f32 dyL;
@@ -690,6 +726,8 @@ void EnFhgFire_EnergyBall(EnFhgFire* this, PlayState* play) {
             Actor_Kill(&this->actor);
             return;
         }
+    } else if (this->actor.world.rot.z == GND_ZOP_MOTHER_BALL) {
+        EnFhgFire_ZopMotherBall(this, play);
     } else {
         s32 canBottleReflect2;
         BossGanondrof* bossGnd = (BossGanondrof*)this->actor.parent;
