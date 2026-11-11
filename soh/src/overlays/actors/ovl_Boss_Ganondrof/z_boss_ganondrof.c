@@ -779,11 +779,12 @@ void BossGanondrof_Neutral(BossGanondrof* this, PlayState* play) {
                 targetX = GND_BOSSROOM_CENTER_X;
                 targetZ = GND_BOSSROOM_CENTER_Z;
             } else {
-                // ZeldaOOTProject: keeps more distance to Link (300 instead of 180 in front of him)
-                targetX = playerx->world.pos.x + (ZOP_HARD(180.0f, 300.0f) * Math_SinS(playerx->shape.rot.y));
-                targetZ = playerx->world.pos.z + (ZOP_HARD(180.0f, 300.0f) * Math_CosS(playerx->shape.rot.y));
+                // ZeldaOOTProject: keeps more distance to Link (400 instead of 180 in front of him) and may hover
+                // out to 400 from the middle of the room (the walls are at ~410-440)
+                targetX = playerx->world.pos.x + (ZOP_HARD(180.0f, 400.0f) * Math_SinS(playerx->shape.rot.y));
+                targetZ = playerx->world.pos.z + (ZOP_HARD(180.0f, 400.0f) * Math_CosS(playerx->shape.rot.y));
                 if (sqrtf(SQ(targetX - GND_BOSSROOM_CENTER_X) + SQ(targetZ - GND_BOSSROOM_CENTER_Z)) >
-                    ZOP_HARD(280.0f, 340.0f)) {
+                    ZOP_HARD(280.0f, 400.0f)) {
                     this->timers[1] = 50;
                     this->fwork[GND_FLOAT_SPEED] = 0.0f;
                 }
