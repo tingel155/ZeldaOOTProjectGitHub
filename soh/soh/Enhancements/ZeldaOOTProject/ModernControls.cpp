@@ -344,6 +344,12 @@ extern "C" float ZOP_SideHopHeight(float vanillaHeight) {
     return (ControlsEnabled() && CVarGetInteger(CVAR_ZOP_CONTROLS("HighSideHop"), 1)) ? 5.8f : vanillaHeight;
 }
 
+// Air control in hops / Z-targeting jumps: how much the stick can push the flight per frame (gZOP.Controls.AirControl,
+// 0 = off as in vanilla)
+extern "C" float ZOP_AirControl(void) {
+    return ControlsEnabled() ? CVarGetFloat(CVAR_ZOP_CONTROLS("AirControl"), 0.45f) : 0.0f;
+}
+
 extern "C" float ZOP_LockOnTurnStep(float vanillaStep) {
     if (!ControlsEnabled()) {
         return vanillaStep;

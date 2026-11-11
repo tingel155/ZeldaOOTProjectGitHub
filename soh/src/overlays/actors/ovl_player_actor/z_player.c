@@ -9729,6 +9729,21 @@ void Player_Action_8084411C(Player* this, PlayState* play) {
 
         if (!(this->stateFlags2 & PLAYER_STATE2_HOPPING)) {
             func_8083DFE0(this, &sp4C, &sp4A);
+        } else if (sp4C > 0.0f) {
+            // ZeldaOOTProject: a little air control in hops / Z-targeting jumps: the stick nudges the flight
+            // direction a bit (without making the jump much faster)
+            f32 accel = ZOP_AirControl() * CLAMP_MAX(sp4C, 6.0f) / 6.0f;
+
+            if (accel > 0.0f) {
+                f32 vx = Math_SinS(this->yaw) * this->linearVelocity + Math_SinS(sp4A) * accel;
+                f32 vz = Math_CosS(this->yaw) * this->linearVelocity + Math_CosS(sp4A) * accel;
+                f32 speed = sqrtf(SQ(vx) + SQ(vz));
+
+                this->linearVelocity = CLAMP_MAX(speed, CLAMP_MIN(this->linearVelocity, 9.0f));
+                if (speed > 0.1f) {
+                    this->yaw = Math_FAtan2F(vx, vz) * (0x8000 / M_PI);
+                }
+            }
         }
 
         Player_UpdateUpperBody(this, play);

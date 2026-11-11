@@ -232,6 +232,7 @@ static u8 sZopAuraRed;      // red pulse on his body this frame
 #define ZOP_CHARGE_REWINDUP 12   // wind-up frames between two charges of a series
 #define ZOP_SLAM_CHANCE 0.2f     // chance of the staff slam on its own whenever he picks his next move
 static void BossGanondrof_ZopSetupFinale(BossGanondrof* this, PlayState* play);
+static void BossGanondrof_ZopFinale(BossGanondrof* this, PlayState* play);
 // Floor shots: he fires 2-4 balls one after another into the floor in front of Link, each one sends out a ring that
 // Link has to jump over. He throws a big ball up over the middle of the room, and the balls come from there while he
 // just floats and watches
@@ -1210,6 +1211,11 @@ void BossGanondrof_SetupStunned(BossGanondrof* this, PlayState* play) {
     if (this->actionFunc != BossGanondrof_Stunned) {
         sZopAuraPlanned = ZOP_DifficultyEnabled() && (Rand_ZeroOne() < ZOP_AURA_CHANCE);
         sZopAuraDelay = -1; // set by Link's first hit while he is down
+        if (sZopAuraPlanned && (this->actionFunc == BossGanondrof_ZopFinale)) {
+            // hit while kneeling after his staff slam: that already is the first hit
+            sZopAuraDelay = 1 + (s16)(Rand_ZeroOne() * 40.0f);
+            this->timers[0] = sZopAuraDelay + ZOP_AURA_FRAMES + 8;
+        }
         sZopAuraTimer = -1;
         this->fwork[GND_END_FRAME] = Animation_GetLastFrame(&gPhantomGanonAirDamageAnim);
         Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonAirDamageAnim, 0.0f);
@@ -2019,7 +2025,7 @@ void BossGanondrof_Update(Actor* thisx, PlayState* play) {
         sZopBurstCooldown--;
     }
     // ZeldaOOTProject testing aid (gZOP.TestEnv.GanondrofSlam): Link is put into the arena (from the elevator below)
-    if (ZOP_TestGanondrofSlam() && (this->actor.params == GND_REAL_BOSS) &&
+    if ((ZOP_TestGanondrofSlam() || ZOP_TestGanondrofPhase2()) && (this->actor.params == GND_REAL_BOSS) &&
         (GET_PLAYER(play)->actor.world.pos.y < GND_BOSSROOM_CENTER_Y - 50.0f)) {
         Player* zopPlayer = GET_PLAYER(play);
 
