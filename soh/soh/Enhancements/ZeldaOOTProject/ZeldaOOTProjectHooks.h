@@ -47,6 +47,9 @@ int ZOP_GohmaLaserActive(struct PlayState* play);
 // Gohma phase 2: glowing rifts racing over the floor from (x, y, z), fanned around yaw (GohmaFloorLanes.cpp)
 void ZOP_SpawnGohmaFloorLanes(struct PlayState* play, void* shooter, float x, float y, float z, short yaw, int count);
 int ZOP_IsGohmaFloorLane(short actorId);
+// Phantom Ganon phase 2: a glowing ring spreading over the floor from (x, y, z) that Link has to jump over
+// (GanondrofRings.cpp)
+void ZOP_SpawnGndRing(struct PlayState* play, float x, float y, float z, float maxRadius, float speed);
 
 // z_player.c / z_en_elf.c: nonzero when Navi always flies next to Link and the A button no longer calls her in or
 // out (ModernControls.cpp)

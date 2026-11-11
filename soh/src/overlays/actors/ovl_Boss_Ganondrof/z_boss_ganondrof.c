@@ -220,6 +220,8 @@ static s16 sZopChargesLeft;     // charge attack: more charges to come in this s
 #define ZOP_GND_CHARGE_DAMAGE 0x20
 #define ZOP_CHARGE_SPEED 18.0f   // vanilla 10
 #define ZOP_CHARGE_REWINDUP 12   // wind-up frames between two charges of a series
+#define ZOP_SLAM_CHANCE 0.2f     // chance of the staff slam on its own whenever he picks his next move
+static void BossGanondrof_ZopSetupFinale(BossGanondrof* this, PlayState* play);
 #define ZOP_POWER_FLASH_FRAMES 12
 
 void BossGanondrof_Init(Actor* thisx, PlayState* play) {
@@ -743,6 +745,9 @@ void BossGanondrof_Neutral(BossGanondrof* this, PlayState* play) {
                     this->timers[0] = 60;
                     this->fwork[GND_FLOAT_SPEED] = 0.0f;
                     Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_LAUGH);
+                } else if (ZOP_DifficultyEnabled() && (rand01 < ZOP_CHARGE_CHANCE + ZOP_SLAM_CHANCE)) {
+                    // ZeldaOOTProject: the staff slam with its rings, without a charge before it
+                    BossGanondrof_ZopSetupFinale(this, play);
                 } else if (thisx->colChkInfo.health < 5) {
                     if (rand01 < 0.25f) {
                         BossGanondrof_SetupThrow(this, play);
@@ -1055,45 +1060,37 @@ static void BossGanondrof_ZopChargeFlash(BossGanondrof* this, PlayState* play) {
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_LAUGH);
 }
 
-// ZeldaOOTProject: glowing rifts racing over the floor from (x, z) (the ones of the Gohma fight), one per yaw
-static void BossGanondrof_ZopFloorLanes(BossGanondrof* this, PlayState* play, f32 x, f32 y, f32 z, s16 yaw,
-                                        s16 count) {
-    EnfHG* horse = (EnfHG*)this->actor.child;
-
-    ZOP_SpawnGohmaFloorLanes(play, &this->actor, x, y, z, yaw, count);
-    this->actor.child = &horse->actor; // spawning them as children must not lose the horse
-}
-
-// ZeldaOOTProject: the end of a charge: he slams lightning into the floor, a damaging burst and glowing rifts over the
-// floor fanned out toward Link
+// ZeldaOOTProject: the end of a charge: he slams lightning into the floor, a damaging burst and a ring spreading over
+// the floor that Link has to jump over
 static void BossGanondrof_ZopChargeImpact(BossGanondrof* this, PlayState* play) {
     Player* player = GET_PLAYER(play);
     f32 groundY = player->actor.world.pos.y;
-    s16 yawToLink = Math_Vec3f_Yaw(&this->actor.world.pos, &player->actor.world.pos);
 
     Actor_Spawn(&play->actorCtx, play, ACTOR_EN_FHG_FIRE, this->actor.world.pos.x, groundY + 20.0f,
                 this->actor.world.pos.z, 400, 0, 0, FHGFIRE_LIGHTNING_BURST);
-    BossGanondrof_ZopFloorLanes(this, play, this->actor.world.pos.x, groundY, this->actor.world.pos.z, yawToLink, 3);
+    ZOP_SpawnGndRing(play, this->actor.world.pos.x, groundY, this->actor.world.pos.z, 450.0f, 10.0f);
     ZOP_GndRallyFlash(1.6f);
     Actor_RequestQuakeAndRumble(&this->actor, play, 5, 12);
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_HIT_THUNDER);
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_THUNDER_GND);
 }
 
-// ---------- ZeldaOOTProject: finale of the charge series. He flies to the middle of the room, raises his staff, rams it
-// into the floor, and glowing rifts race out in all directions, in two waves
+// ---------- ZeldaOOTProject: staff slam (after a charge series, or on its own). He flies to the middle of the room,
+// raises his staff, rams it into the floor, and rings spread out over the floor, one after another at uneven
+// intervals and speeds, that Link has to jump over like skipping ropes
 typedef enum {
     ZOP_FINALE_FLY,
     ZOP_FINALE_RAISE,
     ZOP_FINALE_SLAM,
-    ZOP_FINALE_WAVE2,
+    ZOP_FINALE_RINGS,
     ZOP_FINALE_RECOVER
 } ZopFinaleState;
 
-#define ZOP_FINALE_LANES 12
+#define ZOP_FINALE_RING_RADIUS 650.0f
 
 static s16 sZopFinaleState;
 static s16 sZopFinaleTimer;
+static s16 sZopFinaleRingsLeft;
 static f32 sZopFinaleGroundY;
 
 static void BossGanondrof_ZopFinale(BossGanondrof* this, PlayState* play);
@@ -1110,13 +1107,9 @@ static void BossGanondrof_ZopSetupFinale(BossGanondrof* this, PlayState* play) {
     Audio_PlayActorSound2(&this->actor, NA_SE_EN_FANTOM_LAUGH);
 }
 
-static void BossGanondrof_ZopFinaleWave(BossGanondrof* this, PlayState* play, s16 offset) {
-    s16 i;
-
-    for (i = 0; i < ZOP_FINALE_LANES; i++) {
-        BossGanondrof_ZopFloorLanes(this, play, GND_BOSSROOM_CENTER_X, sZopFinaleGroundY, GND_BOSSROOM_CENTER_Z,
-                                    i * (0x10000 / ZOP_FINALE_LANES) + offset, 1);
-    }
+static void BossGanondrof_ZopFinaleRing(BossGanondrof* this, PlayState* play, f32 speed) {
+    ZOP_SpawnGndRing(play, GND_BOSSROOM_CENTER_X, sZopFinaleGroundY, GND_BOSSROOM_CENTER_Z, ZOP_FINALE_RING_RADIUS,
+                     speed);
 }
 
 static void BossGanondrof_ZopFinale(BossGanondrof* this, PlayState* play) {
@@ -1159,26 +1152,32 @@ static void BossGanondrof_ZopFinale(BossGanondrof* this, PlayState* play) {
             if (sZopFinaleTimer == 0) {
                 Actor_Spawn(&play->actorCtx, play, ACTOR_EN_FHG_FIRE, GND_BOSSROOM_CENTER_X, sZopFinaleGroundY + 20.0f,
                             GND_BOSSROOM_CENTER_Z, 500, 0, 0, FHGFIRE_LIGHTNING_BURST);
-                BossGanondrof_ZopFinaleWave(this, play, (s16)Rand_CenteredFloat(0x800));
+                BossGanondrof_ZopFinaleRing(this, play, 9.0f);
                 this->shockTimer = 20;
                 ZOP_GndRallyFlash(2.0f);
                 Actor_RequestQuakeAndRumble(thisx, play, 8, 15);
                 Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_HIT_THUNDER);
                 Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_THUNDER_GND);
                 Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_THUNDER);
-                sZopFinaleState = ZOP_FINALE_WAVE2;
-                sZopFinaleTimer = 22;
+                sZopFinaleState = ZOP_FINALE_RINGS;
+                sZopFinaleRingsLeft = 2 + (s16)(Rand_ZeroOne() * 2.99f); // 2-4 more
+                sZopFinaleTimer = 14 + (s16)(Rand_ZeroOne() * 18.0f);
             }
             break;
-        case ZOP_FINALE_WAVE2:
-            // a second wave, in the gaps of the first
+        case ZOP_FINALE_RINGS:
+            // more rings, at uneven intervals and speeds, so Link can't just jump in a fixed rhythm
             if (sZopFinaleTimer == 0) {
-                BossGanondrof_ZopFinaleWave(this, play, 0x10000 / (ZOP_FINALE_LANES * 2));
-                ZOP_GndRallyFlash(0.9f);
+                BossGanondrof_ZopFinaleRing(this, play, 7.5f + Rand_ZeroOne() * 4.5f);
+                this->shockTimer = 8;
+                ZOP_GndRallyFlash(0.8f);
                 Actor_RequestQuakeAndRumble(thisx, play, 4, 8);
                 Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_THUNDER_GND);
-                sZopFinaleState = ZOP_FINALE_RECOVER;
-                sZopFinaleTimer = 30;
+                if (--sZopFinaleRingsLeft > 0) {
+                    sZopFinaleTimer = 12 + (s16)(Rand_ZeroOne() * 22.0f);
+                } else {
+                    sZopFinaleState = ZOP_FINALE_RECOVER;
+                    sZopFinaleTimer = 30;
+                }
             }
             break;
         case ZOP_FINALE_RECOVER:
