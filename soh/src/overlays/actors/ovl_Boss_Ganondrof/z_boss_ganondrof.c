@@ -1127,7 +1127,7 @@ static void BossGanondrof_ZopFinale(BossGanondrof* this, PlayState* play) {
 
     if (sZopFinaleAlone && (sZopFinaleState >= ZOP_FINALE_RINGS)) {
         this->shockTimer = 2;
-        Math_ApproachF(&thisx->world.pos.y, sZopFinaleGroundY + 10.0f, 0.3f, 5.0f);
+        Math_ApproachF(&thisx->world.pos.y, sZopFinaleGroundY, 0.3f, 5.0f);
         if ((this->work[GND_VARIANCE_TIMER] % 20) == 0) {
             Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_DAMAGE2);
         }
@@ -1172,8 +1172,9 @@ static void BossGanondrof_ZopFinale(BossGanondrof* this, PlayState* play) {
                 Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_THUNDER_GND);
                 Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_THUNDER);
                 if (sZopFinaleAlone) {
-                    // worn out by the slam: he twitches and crackles like when a ball hit him, open to attacks
-                    Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonAirDamageAnim, 0.0f);
+                    // worn out by the slam: he kneels on the floor and crackles like when a ball hit him, open to
+                    // attacks
+                    Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonStunnedAnim, -10.0f);
                     Audio_PlayActorSound2(thisx, NA_SE_EN_FANTOM_DAMAGE);
                 }
                 sZopFinaleState = ZOP_FINALE_RINGS;
