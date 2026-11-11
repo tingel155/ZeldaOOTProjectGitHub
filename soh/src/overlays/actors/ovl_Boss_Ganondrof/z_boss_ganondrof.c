@@ -225,7 +225,7 @@ static s16 sZopAuraTimer;   // -1: none, else frames into it
 static u8 sZopAuraRed;      // red pulse on his body this frame
 #define ZOP_AURA_CHANCE 1.0f
 #define ZOP_AURA_FRAMES 40
-#define ZOP_AURA_RADIUS 150.0f
+#define ZOP_AURA_RADIUS 75.0f
 #define ZOP_AURA_DAMAGE 0x18
 #define ZOP_GND_CHARGE_DAMAGE 0x28
 #define ZOP_CHARGE_SPEED 18.0f   // vanilla 10
@@ -236,10 +236,12 @@ static void BossGanondrof_ZopSetupFinale(BossGanondrof* this, PlayState* play);
 // Link has to jump over. He throws a big ball up over the middle of the room, and the balls come from there while he
 // just floats and watches
 #define ZOP_FLOORSHOT_CHANCE 0.15f // chance whenever he picks his next move
-#define ZOP_FLOORSHOT_INTERVAL 24  // frames between two shots
+#define ZOP_FLOORSHOT_INTERVAL 40  // frames between two shots
 static s16 sZopShotsLeft;
 static s16 sZopShotTimer;
 static Actor* sZopMotherBall;
+static s16 sZopShotAngle; // where the last shot went (around the middle of the room)
+static f32 sZopShotDist;
 static void BossGanondrof_ZopEndMotherBall(PlayState* play);
 static void BossGanondrof_ZopSetupFloorShots(BossGanondrof* this, PlayState* play);
 static u8 sZopFinaleAlone; // open to attacks after the staff slam (kneeling); set for every slam
@@ -746,6 +748,8 @@ static void BossGanondrof_ZopSetupFloorShots(BossGanondrof* this, PlayState* pla
     this->actionFunc = BossGanondrof_ZopFloorShots;
     sZopShotsLeft = 2 + (s16)(Rand_ZeroOne() * 2.99f);
     sZopShotTimer = 0;
+    sZopShotAngle = (s16)(Rand_ZeroOne() * 0xFFFF);
+    sZopShotDist = -1.0f; // none yet
     // the big ball, thrown up over the middle of the room
     this->fwork[GND_END_FRAME] = Animation_GetLastFrame(&gPhantomGanonThrowEndAnim);
     Animation_MorphToPlayOnce(&this->skelAnime, &gPhantomGanonThrowEndAnim, -2.0f);
@@ -818,22 +822,26 @@ static void BossGanondrof_ZopFloorShots(BossGanondrof* this, PlayState* play) {
         return;
     }
 
-    // A shot from the big ball: a spot on the floor a bit in front of Link (seen from the ball) and to the side, so the
-    // ring reaches Link soon but not at once
+    // A shot from the big ball into the floor, each one at a clearly different place than the one before: on the
+    // opposite side of the arena (far left after far right, far back after far front, ...), and near the middle
+    // after near the edge and the other way round
     {
         EnfHG* horse = (EnfHG*)this->actor.child;
-        s16 yawLinkToBall = Math_Vec3f_Yaw(&player->actor.world.pos, &mother->world.pos);
-        f32 ahead = 90.0f + Rand_ZeroOne() * 130.0f;
-        f32 side = Rand_CenteredFloat(160.0f);
         Vec3f spot;
         f32 dx;
         f32 dy;
         f32 dz;
         Actor* ball;
 
-        spot.x = player->actor.world.pos.x + Math_SinS(yawLinkToBall) * ahead + Math_CosS(yawLinkToBall) * side;
-        spot.y = player->actor.world.pos.y;
-        spot.z = player->actor.world.pos.z + Math_CosS(yawLinkToBall) * ahead - Math_SinS(yawLinkToBall) * side;
+        if (sZopShotDist >= 0.0f) {
+            sZopShotAngle += 0x8000 + (s16)Rand_CenteredFloat(0x3000);
+        }
+        sZopShotDist = ((sZopShotDist < 0.0f) ? (Rand_ZeroOne() < 0.5f) : (sZopShotDist < 180.0f))
+                           ? 220.0f + Rand_ZeroOne() * 70.0f
+                           : 60.0f + Rand_ZeroOne() * 80.0f;
+        spot.x = GND_BOSSROOM_CENTER_X + Math_SinS(sZopShotAngle) * sZopShotDist;
+        spot.y = GND_BOSSROOM_CENTER_Y;
+        spot.z = GND_BOSSROOM_CENTER_Z + Math_CosS(sZopShotAngle) * sZopShotDist;
         ball = Actor_SpawnAsChild(&play->actorCtx, &this->actor, play, ACTOR_EN_FHG_FIRE, mother->world.pos.x,
                                   mother->world.pos.y, mother->world.pos.z, 0, 0, 0, FHGFIRE_ENERGY_BALL);
         this->actor.child = &horse->actor;
@@ -930,7 +938,8 @@ void BossGanondrof_Neutral(BossGanondrof* this, PlayState* play) {
                 }
             }
 
-            targetY = playerx->world.pos.y + 100.0f + 0.0f;
+            // (ZeldaOOTProject: a bit lower, so he stays in the picture)
+            targetY = playerx->world.pos.y + (ZOP_DifficultyEnabled() ? 75.0f : 100.0f);
             targetX += Math_SinS(this->work[GND_VARIANCE_TIMER] * 0x500) * 100.0f;
             targetZ += Math_CosS(this->work[GND_VARIANCE_TIMER] * 0x700) * 100.0f;
             break;
@@ -938,7 +947,7 @@ void BossGanondrof_Neutral(BossGanondrof* this, PlayState* play) {
             targetX = GND_BOSSROOM_CENTER_X - 14.0f;
             targetZ = GND_BOSSROOM_CENTER_Z + 265.0f;
 
-            targetY = playerx->world.pos.y + 100.0f + 100.0f;
+            targetY = playerx->world.pos.y + (ZOP_DifficultyEnabled() ? 150.0f : 200.0f);
             targetX += Math_SinS(this->work[GND_VARIANCE_TIMER] * 0x500) * 100.0f;
             targetZ += Math_CosS(this->work[GND_VARIANCE_TIMER] * 0x700) * 100.0f;
             if (this->timers[0] == 0) {
@@ -952,7 +961,7 @@ void BossGanondrof_Neutral(BossGanondrof* this, PlayState* play) {
             targetX = GND_BOSSROOM_CENTER_X - 14.0f;
             targetZ = GND_BOSSROOM_CENTER_Z + 265.0f;
 
-            targetY = playerx->world.pos.y + 100.0f + 100.0f;
+            targetY = playerx->world.pos.y + (ZOP_DifficultyEnabled() ? 150.0f : 200.0f);
             targetX += Math_SinS(this->work[GND_VARIANCE_TIMER] * 0x500) * 50.0f;
             targetZ += Math_CosS(this->work[GND_VARIANCE_TIMER] * 0x700) * 50.0f;
             if (this->returnSuccess) {
@@ -969,7 +978,7 @@ void BossGanondrof_Neutral(BossGanondrof* this, PlayState* play) {
             targetX = GND_BOSSROOM_CENTER_X - 14.0f;
             targetZ = GND_BOSSROOM_CENTER_Z + 215.0f;
 
-            targetY = playerx->world.pos.y + 100.0f + 50.0f;
+            targetY = playerx->world.pos.y + (ZOP_DifficultyEnabled() ? 115.0f : 150.0f);
             targetX += Math_SinS(this->work[GND_VARIANCE_TIMER] * 0x500) * 100.0f;
             targetZ += Math_CosS(this->work[GND_VARIANCE_TIMER] * 0x700) * 100.0f;
             if (this->timers[0] == 0) {
@@ -1124,8 +1133,10 @@ static void BossGanondrof_ZopAura(BossGanondrof* this, PlayState* play) {
     s16 i;
 
     if (sZopAuraTimer < 0) {
-        if (sZopAuraDelay > 0) {
-            sZopAuraDelay--;
+        if (sZopAuraDelay != 0) {
+            if (sZopAuraDelay > 0) {
+                sZopAuraDelay--;
+            }
             return;
         }
         sZopAuraTimer = 0;
@@ -1189,7 +1200,7 @@ void BossGanondrof_SetupStunned(BossGanondrof* this, PlayState* play) {
     BossGanondrof_ZopEndMotherBall(play);
     if (this->actionFunc != BossGanondrof_Stunned) {
         sZopAuraPlanned = ZOP_DifficultyEnabled() && (Rand_ZeroOne() < ZOP_AURA_CHANCE);
-        sZopAuraDelay = 10 + (s16)(Rand_ZeroOne() * 40.0f);
+        sZopAuraDelay = -1; // set when he lands
         sZopAuraTimer = -1;
         this->fwork[GND_END_FRAME] = Animation_GetLastFrame(&gPhantomGanonAirDamageAnim);
         Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonAirDamageAnim, 0.0f);
@@ -1215,6 +1226,13 @@ void BossGanondrof_Stunned(BossGanondrof* this, PlayState* play) {
             this->fwork[GND_END_FRAME] = Animation_GetLastFrame(&gPhantomGanonStunnedAnim);
             Animation_MorphToLoop(&this->skelAnime, &gPhantomGanonStunnedAnim, -10.0f);
             this->work[GND_ACTION_STATE] = STUNNED_GROUND;
+            if (sZopAuraPlanned && (sZopAuraTimer < 0) && (sZopAuraDelay < 0)) {
+                // ZeldaOOTProject: he stays down long enough for the aura to burst
+                sZopAuraDelay = 5 + (s16)(Rand_ZeroOne() * 20.0f);
+                if (this->timers[0] < sZopAuraDelay + ZOP_AURA_FRAMES + 8) {
+                    this->timers[0] = sZopAuraDelay + ZOP_AURA_FRAMES + 8;
+                }
+            }
         }
 
         this->actor.velocity.y = 0.0f;
