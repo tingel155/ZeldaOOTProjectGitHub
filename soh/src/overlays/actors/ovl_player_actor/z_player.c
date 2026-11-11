@@ -6356,6 +6356,26 @@ s32 Player_ActionHandler_10(Player* this, PlayState* play) {
         (SurfaceType_GetFloorEffect(&play->colCtx, this->actor.floorPoly, this->actor.floorBgId) != FLOOR_EFFECT_1)) {
         controlStickDirection = this->controlStickDirections[this->controlStickDataIndex];
 
+        if (ZOP_LockOnLeap() && Player_IsZTargeting(this) && (this->actor.category == ACTORCAT_PLAYER) &&
+            (controlStickDirection > PLAYER_STICK_DIR_NONE)) {
+            // ZeldaOOTProject: while Z-targeting, A jumps exactly where the stick points (any direction, not only
+            // forward / sideways / back relative to the target). The animation is the closest of the four hops;
+            // pressing the sword button in the air during a jump toward the target turns it into the jump attack.
+            s16 rel = (s16)(sControlStickWorldYaw - this->actor.shape.rot.y);
+            s32 dir = ((u16)(rel + 0x2000)) >> 14;
+
+            func_8083BCD0(this, play, dir);
+            this->yaw = sControlStickWorldYaw;
+            this->linearVelocity = (dir == PLAYER_STICK_DIR_FORWARD) ? ZOP_LockOnLeapSpeed() : 8.0f;
+            this->actor.velocity.y = 5.8f * sWaterSpeedFactor;
+            if ((dir == 1) || (dir == 3)) {
+                gSaveContext.ship.stats.count[COUNT_SIDEHOPS]++;
+            } else if (dir == 2) {
+                gSaveContext.ship.stats.count[COUNT_BACKFLIPS]++;
+            }
+            return 1;
+        }
+
         if (controlStickDirection <= PLAYER_STICK_DIR_FORWARD) {
             if (Player_IsZTargeting(this)) {
                 if (this->actor.category != ACTORCAT_PLAYER) {
