@@ -511,16 +511,15 @@ const std::vector<Mesh>& SceneMeshes(PlayState* play) {
                 continue;
             }
             auto* setMesh = (SOH::SetMesh*)cmd.get();
-            if (setMesh->meshHeaderType == 2) {
-                for (size_t i = 0; i < setMesh->dlists2.size(); i++) {
-                    DecodeEntry(sMeshes, room, (int)i, false, setMesh->dlists2[i].opa);
-                    DecodeEntry(sMeshes, room, (int)i, true, setMesh->dlists2[i].xlu);
-                }
-            } else if (setMesh->meshHeaderType == 0) {
-                for (size_t i = 0; i < setMesh->dlists.size(); i++) {
-                    DecodeEntry(sMeshes, room, (int)i, false, setMesh->dlists[i].opa);
-                    DecodeEntry(sMeshes, room, (int)i, true, setMesh->dlists[i].xlu);
-                }
+            // meshHeaderType isn't always filled in by the resource loader, so both entry lists are read (only the
+            // one of the room's mesh type has entries)
+            for (size_t i = 0; i < setMesh->dlists2.size(); i++) {
+                DecodeEntry(sMeshes, room, (int)i, false, setMesh->dlists2[i].opa);
+                DecodeEntry(sMeshes, room, (int)i, true, setMesh->dlists2[i].xlu);
+            }
+            for (size_t i = 0; i < setMesh->dlists.size(); i++) {
+                DecodeEntry(sMeshes, room, (int)i, false, setMesh->dlists[i].opa);
+                DecodeEntry(sMeshes, room, (int)i, true, setMesh->dlists[i].xlu);
             }
             break;
         }
