@@ -9,10 +9,14 @@
 // All rooms of the scene are drawn at once, so a whole dungeon can be looked at without walking through its doors.
 
 #include "MapEditor.h"
+#include "MapMeshes.h"
 
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <libultraship/bridge/consolevariablebridge.h>
+#include <ship/Context.h>
+#include <ship/window/Window.h>
+#include <ship/window/gui/Gui.h>
 
 #include <algorithm>
 #include <cmath>
@@ -38,10 +42,13 @@ extern PlayState* gPlayState;
 
 #define CVAR_ZOP_MAPEDITOR(var) "gZOP.MapEditor." var
 
+// extern "C": OPEN_DISPS declares C-linkage helpers at block scope
+extern "C" void ZopMapEditor_EmitXlu(Gfx* dl);
+
 namespace {
 
 constexpr float kPi = 3.14159265f;
-constexpr const char* kLowResCVar = "gLowResMode";
+constexpr const char* kLowResCVar = "gSettings.LowResMode";
 
 struct EditorCam {
     Vec3f pos = { 0.0f, 0.0f, 0.0f };
@@ -56,7 +63,6 @@ bool sWasActive = false;
 bool sWarping = false;
 s16 sWarpScene = -1;
 int sWarpSettle = 0;
-int sSavedLowRes = -1;
 bool sLooking = false;
 bool sPanning = false;
 bool sOrbiting = false;
@@ -67,6 +73,17 @@ s16 sCacheScene = -1;
 int sCacheRooms = -1;
 std::vector<std::shared_ptr<Ship::IResource>> sRoomRes;
 std::vector<MeshHeader*> sRoomMesh;
+
+// Selection (indices into ZopMap::SceneMeshes)
+std::vector<int> sSelected;
+s16 sSelectionScene = -1;
+int sSelectionVersion = 0;
+int sHighlightVersion = -1;
+std::vector<Vtx> sHlVtx;
+std::vector<Gfx> sHlDl;
+bool sClickArmed = false;
+ImVec2 sClickStart;
+std::string sStatus;
 
 bool DrawAllRooms() {
     return CVarGetInteger(CVAR_ZOP_MAPEDITOR("AllRooms"), 1);
@@ -133,6 +150,269 @@ void InitCamFromGame() {
     }
 }
 
+bool IsSelected(int idx) {
+    return std::find(sSelected.begin(), sSelected.end(), idx) != sSelected.end();
+}
+
+void SelectMesh(int idx, bool toggle) {
+    if (!toggle) {
+        sSelected.clear();
+        if (idx >= 0) {
+            sSelected.push_back(idx);
+        }
+    } else if (idx >= 0) {
+        auto it = std::find(sSelected.begin(), sSelected.end(), idx);
+        if (it != sSelected.end()) {
+            sSelected.erase(it);
+        } else {
+            sSelected.push_back(idx);
+        }
+    }
+    sSelectionVersion++;
+}
+
+void CheckSelectionScene() {
+    if (sSelectionScene != gPlayState->sceneNum) {
+        sSelectionScene = gPlayState->sceneNum;
+        sSelected.clear();
+        sSelectionVersion++;
+        sStatus.clear();
+    }
+}
+
+std::string ExportDir() {
+    std::string def = Ship::Context::GetPathRelativeToAppDirectory("zop_export");
+    return CVarGetString(CVAR_ZOP_MAPEDITOR("ExportDir"), def.c_str());
+}
+
+Vec3f CamUp() {
+    Vec3f f = Forward();
+    Vec3f r = Right();
+    return { r.y * f.z - r.z * f.y, r.z * f.x - r.x * f.z, r.x * f.y - r.y * f.x };
+}
+
+// Ray from the camera through the mouse position (false if the mouse isn't over the game view)
+bool MouseRay(Vec3f& dir) {
+    ImGuiWindow* gw = ImGui::FindWindowByName("Main Game");
+    if ((gw == nullptr) || (gw->Size.x < 1.0f) || (gw->Size.y < 1.0f)) {
+        return false;
+    }
+    // the game image: the whole window, or 4:3 in the middle in N64 mode
+    ImVec2 pos = gw->Pos;
+    ImVec2 size = gw->Size;
+    if (CVarGetInteger(kLowResCVar, 0) == 1) {
+        float sw = size.y * 4.0f / 3.0f;
+        pos.x += floorf(size.x / 2.0f - sw / 2.0f);
+        size.x = sw;
+    }
+    ImVec2 m = ImGui::GetIO().MousePos;
+    float x = (m.x - pos.x) / size.x * 2.0f - 1.0f;
+    float y = 1.0f - (m.y - pos.y) / size.y * 2.0f;
+    if ((fabsf(x) > 1.0f) || (fabsf(y) > 1.0f)) {
+        return false;
+    }
+    float th = tanf(Fov() * kPi / 360.0f);
+    float aspect = size.x / size.y;
+    Vec3f f = Forward();
+    Vec3f r = Right();
+    Vec3f u = CamUp();
+    dir = f;
+    AddScaled(dir, r, x * th * aspect);
+    AddScaled(dir, u, y * th);
+    float len = sqrtf(dir.x * dir.x + dir.y * dir.y + dir.z * dir.z);
+    dir.x /= len;
+    dir.y /= len;
+    dir.z /= len;
+    return true;
+}
+
+bool RayBox(const Vec3f& o, const Vec3f& d, const ZopMap::V3& mn, const ZopMap::V3& mx, float maxT) {
+    float t0 = 0.0f, t1 = maxT;
+    const float* oo = &o.x;
+    const float* dd = &d.x;
+    const float* lo = &mn.x;
+    const float* hi = &mx.x;
+    for (int i = 0; i < 3; i++) {
+        if (fabsf(dd[i]) < 1e-8f) {
+            if ((oo[i] < lo[i] - 1.0f) || (oo[i] > hi[i] + 1.0f)) {
+                return false;
+            }
+            continue;
+        }
+        float a = (lo[i] - 1.0f - oo[i]) / dd[i];
+        float b = (hi[i] + 1.0f - oo[i]) / dd[i];
+        if (a > b) {
+            std::swap(a, b);
+        }
+        t0 = std::max(t0, a);
+        t1 = std::min(t1, b);
+        if (t0 > t1) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// Moeller-Trumbore, both sides
+bool RayTri(const Vec3f& o, const Vec3f& d, const ZopMap::V3& a, const ZopMap::V3& b, const ZopMap::V3& c, float& t) {
+    float e1x = b.x - a.x, e1y = b.y - a.y, e1z = b.z - a.z;
+    float e2x = c.x - a.x, e2y = c.y - a.y, e2z = c.z - a.z;
+    float px = d.y * e2z - d.z * e2y, py = d.z * e2x - d.x * e2z, pz = d.x * e2y - d.y * e2x;
+    float det = e1x * px + e1y * py + e1z * pz;
+    if (fabsf(det) < 1e-6f) {
+        return false;
+    }
+    float inv = 1.0f / det;
+    float tx = o.x - a.x, ty = o.y - a.y, tz = o.z - a.z;
+    float u = (tx * px + ty * py + tz * pz) * inv;
+    if ((u < 0.0f) || (u > 1.0f)) {
+        return false;
+    }
+    float qx = ty * e1z - tz * e1y, qy = tz * e1x - tx * e1z, qz = tx * e1y - ty * e1x;
+    float v = (d.x * qx + d.y * qy + d.z * qz) * inv;
+    if ((v < 0.0f) || (u + v > 1.0f)) {
+        return false;
+    }
+    t = (e2x * qx + e2y * qy + e2z * qz) * inv;
+    return t > 0.0f;
+}
+
+int PickMesh() {
+    Vec3f dir;
+    if (!MouseRay(dir)) {
+        return -1;
+    }
+    const auto& meshes = ZopMap::SceneMeshes(gPlayState);
+    bool pickXlu = CVarGetInteger(CVAR_ZOP_MAPEDITOR("PickXlu"), 1);
+    float best = 1e9f;
+    int bestIdx = -1;
+    for (size_t i = 0; i < meshes.size(); i++) {
+        const ZopMap::Mesh& m = meshes[i];
+        if ((m.xlu && !pickXlu) || !RayBox(sCam.pos, dir, m.bbMin, m.bbMax, best)) {
+            continue;
+        }
+        for (size_t v = 0; v + 2 < m.pos.size(); v += 3) {
+            float t;
+            if (RayTri(sCam.pos, dir, m.pos[v], m.pos[v + 1], m.pos[v + 2], t) && (t < best)) {
+                best = t;
+                bestIdx = (int)i;
+            }
+        }
+    }
+    return bestIdx;
+}
+
+void BuildHighlight() {
+    const auto& meshes = ZopMap::SceneMeshes(gPlayState);
+    size_t total = 0;
+    for (int idx : sSelected) {
+        if (idx < (int)meshes.size()) {
+            total += meshes[idx].pos.size();
+        }
+    }
+    sHlVtx.clear();
+    sHlDl.clear();
+    sHlVtx.reserve(total);
+    for (int idx : sSelected) {
+        if (idx >= (int)meshes.size()) {
+            continue;
+        }
+        for (const ZopMap::V3& p : meshes[idx].pos) {
+            Vtx v = {};
+            v.v.ob[0] = (s16)p.x;
+            v.v.ob[1] = (s16)p.y;
+            v.v.ob[2] = (s16)p.z;
+            v.v.cn[0] = v.v.cn[1] = v.v.cn[2] = v.v.cn[3] = 255;
+            sHlVtx.push_back(v);
+        }
+    }
+
+    uint32_t rm = Z_CMP | IM_RD | CVG_DST_FULL | FORCE_BL | ZMODE_DEC;
+    uint32_t blc1 = GBL_c1(G_BL_CLR_IN, G_BL_A_IN, G_BL_CLR_MEM, G_BL_1MA);
+    uint32_t blc2 = GBL_c2(G_BL_CLR_IN, G_BL_A_IN, G_BL_CLR_MEM, G_BL_1MA);
+    sHlDl.push_back(gsDPPipeSync());
+    sHlDl.push_back(gsSPTexture(0, 0, 0, G_TX_RENDERTILE, G_OFF));
+    sHlDl.push_back(gsDPSetCycleType(G_CYC_1CYCLE));
+    sHlDl.push_back(gsDPSetRenderMode(rm | blc1, rm | blc2));
+    sHlDl.push_back(gsDPSetCombineMode(G_CC_PRIMITIVE, G_CC_PRIMITIVE));
+    sHlDl.push_back(gsSPLoadGeometryMode(G_ZBUFFER));
+    sHlDl.push_back(gsDPSetPrimColor(0, 0, 255, 170, 30, 120));
+    for (size_t i = 0; i < sHlVtx.size(); i += 30) {
+        size_t n = std::min<size_t>(30, sHlVtx.size() - i);
+        sHlDl.push_back(gsSPVertex((uintptr_t)&sHlVtx[i], (u32)n, 0));
+        for (size_t t = 0; t + 2 < n; t += 3) {
+            sHlDl.push_back(gsSP1Triangle((u8)t, (u8)(t + 1), (u8)(t + 2), 0));
+        }
+    }
+    sHlDl.push_back(gsSPEndDisplayList());
+    sHighlightVersion = sSelectionVersion;
+}
+
+// Runs at the end of every Play_Draw: the selected meshes glow orange
+void OnDrawEnd() {
+    if (!sActive || sWarping || sSelected.empty() || (gPlayState == nullptr)) {
+        return;
+    }
+    if (sHighlightVersion != sSelectionVersion) {
+        BuildHighlight();
+    }
+    if (sHlVtx.empty()) {
+        return;
+    }
+    ZopMapEditor_EmitXlu(sHlDl.data());
+}
+
+void FocusSelection() {
+    const auto& meshes = ZopMap::SceneMeshes(gPlayState);
+    bool any = false;
+    ZopMap::V3 mn = {}, mx = {};
+    for (int idx : sSelected) {
+        if (idx >= (int)meshes.size()) {
+            continue;
+        }
+        const ZopMap::Mesh& m = meshes[idx];
+        if (!any) {
+            mn = m.bbMin;
+            mx = m.bbMax;
+            any = true;
+        } else {
+            mn = { std::min(mn.x, m.bbMin.x), std::min(mn.y, m.bbMin.y), std::min(mn.z, m.bbMin.z) };
+            mx = { std::max(mx.x, m.bbMax.x), std::max(mx.y, m.bbMax.y), std::max(mx.z, m.bbMax.z) };
+        }
+    }
+    if (!any) {
+        return;
+    }
+    Vec3f at = { (mn.x + mx.x) / 2, (mn.y + mx.y) / 2, (mn.z + mx.z) / 2 };
+    float radius =
+        sqrtf((mx.x - mn.x) * (mx.x - mn.x) + (mx.y - mn.y) * (mx.y - mn.y) + (mx.z - mn.z) * (mx.z - mn.z)) / 2;
+    float dist = radius / tanf(Fov() * kPi / 360.0f) + 30.0f;
+    Vec3f eye = at;
+    AddScaled(eye, Forward(), -dist);
+    LookFrom(eye, at);
+}
+
+void ExportSelection() {
+    const auto& meshes = ZopMap::SceneMeshes(gPlayState);
+    std::string scene = SohUtils::GetSceneName(gPlayState->sceneNum);
+    std::string dir = ExportDir();
+    int ok = 0;
+    std::string err;
+    for (int idx : sSelected) {
+        if (idx >= (int)meshes.size()) {
+            continue;
+        }
+        std::string out;
+        if (ZopMap::ExportMesh(meshes[idx], scene, dir, out, err)) {
+            ok++;
+        }
+    }
+    sStatus = std::to_string(ok) + " FBX-Datei(en) exportiert nach " + dir;
+    if (!err.empty()) {
+        sStatus += "\nFehler: " + err;
+    }
+}
+
 void FocusLink() {
     Player* player = GET_PLAYER(gPlayState);
     Vec3f at = player->actor.world.pos;
@@ -146,6 +426,25 @@ void FocusLink() {
     LookFrom(eye, at);
 }
 
+// The editor shows the map in full resolution; the player's setting (e.g. N64 mode) is kept in a saved backup CVar,
+// so it comes back even if the game is closed while the editor is open
+void EnterHighRes() {
+    if (CVarGetInteger(CVAR_ZOP_MAPEDITOR("LowResBackup"), -1) < 0) {
+        CVarSetInteger(CVAR_ZOP_MAPEDITOR("LowResBackup"), CVarGetInteger(kLowResCVar, 0));
+    }
+    CVarSetInteger(kLowResCVar, 0);
+    Ship::Context::GetRawInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+}
+
+void LeaveHighRes() {
+    int backup = CVarGetInteger(CVAR_ZOP_MAPEDITOR("LowResBackup"), -1);
+    if (backup >= 0) {
+        CVarSetInteger(kLowResCVar, backup);
+        CVarSetInteger(CVAR_ZOP_MAPEDITOR("LowResBackup"), -1);
+        Ship::Context::GetRawInstance()->GetWindow()->GetGui()->SaveConsoleVariablesNextFrame();
+    }
+}
+
 void Activate() {
     sCam.init = false;
     // let the game finish loading and fading in before it gets frozen
@@ -153,16 +452,12 @@ void Activate() {
     sWarpScene = gPlayState->sceneNum;
     sWarpSettle = 0;
     if (HighRes()) {
-        sSavedLowRes = CVarGetInteger(kLowResCVar, 0);
-        CVarSetInteger(kLowResCVar, 0);
+        EnterHighRes();
     }
 }
 
 void Deactivate() {
-    if (sSavedLowRes >= 0) {
-        CVarSetInteger(kLowResCVar, sSavedLowRes);
-        sSavedLowRes = -1;
-    }
+    LeaveHighRes();
     sLooking = sPanning = sOrbiting = false;
 }
 
@@ -369,11 +664,39 @@ void UpdateCamInput() {
     }
 
     if (overGame && !io.WantTextInput && !sLooking && ImGui::IsKeyPressed(ImGuiKey_F, false)) {
-        FocusLink();
+        if (sSelected.empty()) {
+            FocusLink();
+        } else {
+            FocusSelection();
+        }
+    }
+
+    // left click (without Alt, without dragging) picks the mesh under the mouse; Ctrl adds/removes
+    if (overGame && !io.KeyAlt && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        sClickArmed = true;
+        sClickStart = io.MousePos;
+    }
+    if (sClickArmed && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+        sClickArmed = false;
+        float dx = io.MousePos.x - sClickStart.x;
+        float dy = io.MousePos.y - sClickStart.y;
+        if ((dx * dx + dy * dy < 25.0f) && overGame) {
+            int idx = PickMesh();
+            if ((idx >= 0) || !io.KeyCtrl) {
+                SelectMesh(idx, io.KeyCtrl);
+            }
+        }
     }
 }
 
 } // namespace
+
+extern "C" void ZopMapEditor_EmitXlu(Gfx* dl) {
+    OPEN_DISPS(gPlayState->state.gfxCtx);
+    gSPMatrix(POLY_XLU_DISP++, &gMtxClear, G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPDisplayList(POLY_XLU_DISP++, dl);
+    CLOSE_DISPS(gPlayState->state.gfxCtx);
+}
 
 extern "C" int ZOP_MapEditorFrozen(void) {
     return sActive && !sWarping;
@@ -420,6 +743,7 @@ extern "C" void ZOP_MapEditorDrawExtraRooms(PlayState* play, unsigned int flags)
 
 void ZopMapEditorWindow::InitElement() {
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnPlayDrawBegin>(OnDrawBegin);
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnPlayDrawEnd>(OnDrawEnd);
 }
 
 void ZopMapEditorWindow::DrawElement() {
@@ -428,6 +752,7 @@ void ZopMapEditorWindow::DrawElement() {
         return;
     }
 
+    CheckSelectionScene();
     UpdateCamInput();
 
     int scene = gPlayState->sceneNum;
@@ -480,12 +805,10 @@ void ZopMapEditorWindow::DrawElement() {
     bool highRes = HighRes();
     if (ImGui::Checkbox("Hohe Auflösung im Editor", &highRes)) {
         CVarSetInteger(CVAR_ZOP_MAPEDITOR("HighRes"), highRes);
-        if (highRes && (sSavedLowRes < 0)) {
-            sSavedLowRes = CVarGetInteger(kLowResCVar, 0);
-            CVarSetInteger(kLowResCVar, 0);
-        } else if (!highRes && (sSavedLowRes >= 0)) {
-            CVarSetInteger(kLowResCVar, sSavedLowRes);
-            sSavedLowRes = -1;
+        if (highRes) {
+            EnterHighRes();
+        } else {
+            LeaveHighRes();
         }
     }
     float speed = FlySpeed();
@@ -506,9 +829,79 @@ void ZopMapEditorWindow::DrawElement() {
         InitCamFromGame();
     }
 
+    ImGui::SeparatorText("Meshes");
+    if (sWarping) {
+        ImGui::TextDisabled("(nach dem Laden)");
+    } else {
+        const auto& meshes = ZopMap::SceneMeshes(gPlayState);
+        size_t tris = 0;
+        for (int idx : sSelected) {
+            if (idx < (int)meshes.size()) {
+                tris += meshes[idx].TriCount();
+            }
+        }
+        ImGui::Text("Ausgewählt: %d Mesh(es), %d Dreiecke", (int)sSelected.size(), (int)tris);
+        ImGui::BeginDisabled(sSelected.empty());
+        if (ImGui::Button("Auswahl als FBX exportieren")) {
+            ExportSelection();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Auswahl leeren")) {
+            SelectMesh(-1, false);
+        }
+        ImGui::EndDisabled();
+        bool pickXlu = CVarGetInteger(CVAR_ZOP_MAPEDITOR("PickXlu"), 1);
+        if (ImGui::Checkbox("Transparente Meshes anklickbar", &pickXlu)) {
+            CVarSetInteger(CVAR_ZOP_MAPEDITOR("PickXlu"), pickXlu);
+        }
+
+        static char dirBuf[512];
+        static bool dirInit = false;
+        if (!dirInit) {
+            snprintf(dirBuf, sizeof(dirBuf), "%s", ExportDir().c_str());
+            dirInit = true;
+        }
+        ImGui::TextUnformatted("Export-Ordner:");
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::InputText("##exportdir", dirBuf, sizeof(dirBuf))) {
+            CVarSetString(CVAR_ZOP_MAPEDITOR("ExportDir"), dirBuf);
+        }
+        if (!sStatus.empty()) {
+            ImGui::TextWrapped("%s", sStatus.c_str());
+        }
+
+        if (ImGui::TreeNode("Alle Meshes der Map")) {
+            int lastRoom = -1;
+            bool roomOpen = false;
+            for (size_t i = 0; i < meshes.size(); i++) {
+                const ZopMap::Mesh& m = meshes[i];
+                if (m.room != lastRoom) {
+                    if (roomOpen) {
+                        ImGui::TreePop();
+                    }
+                    lastRoom = m.room;
+                    roomOpen = ImGui::TreeNode((void*)(intptr_t)(m.room + 1), "Raum %d", m.room);
+                }
+                if (!roomOpen) {
+                    continue;
+                }
+                std::string label =
+                    m.label + "  (" + std::to_string(m.TriCount()) + " Dreiecke)##" + std::to_string(i);
+                if (ImGui::Selectable(label.c_str(), IsSelected((int)i))) {
+                    SelectMesh((int)i, ImGui::GetIO().KeyCtrl);
+                }
+            }
+            if (roomOpen) {
+                ImGui::TreePop();
+            }
+            ImGui::TreePop();
+        }
+    }
+
     ImGui::SeparatorText("Steuerung");
     ImGui::TextWrapped("Rechte Maustaste halten: umsehen, dabei W/A/S/D fliegen, Q/E runter/hoch, "
                        "Mausrad = Tempo. Shift = schneller. Mausrad allein: vor/zurück. "
                        "Mittlere Maustaste ziehen: verschieben. Alt + linke Maustaste ziehen: drehen um die Mitte. "
-                       "F: zu Link. Das Spiel ist pausiert, solange dieses Fenster offen ist.");
+                       "Linksklick: Mesh auswählen, Strg + Linksklick: hinzufügen/entfernen. "
+                       "F: zur Auswahl (oder zu Link). Das Spiel ist pausiert, solange dieses Fenster offen ist.");
 }
