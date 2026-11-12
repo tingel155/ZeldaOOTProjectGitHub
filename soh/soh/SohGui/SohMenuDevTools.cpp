@@ -178,6 +178,15 @@ void SohMenu::AddMenuDevTools() {
         .HideInSearch(true)
         .Options(WindowButtonOptions().Tooltip("Enables the separate Hook Debugger Window."));
 
+    // ZeldaOOTProject map editor
+    path.sidebarName = "ZOP Map-Editor";
+    AddSidebarEntry("Dev Tools", path.sidebarName, 1);
+    AddWidget(path, "Map-Editor öffnen", WIDGET_WINDOW_BUTTON)
+        .CVar(CVAR_WINDOW("ZOPMapEditor"))
+        .WindowName("ZOP Map-Editor")
+        .HideInSearch(true)
+        .Options(WindowButtonOptions().Tooltip("Öffnet den Map-Editor: Spiel pausiert, freie Kamera durch die Map."));
+
     // Collision Viewer
     path.sidebarName = "Collision Viewer";
     AddSidebarEntry("Dev Tools", path.sidebarName, 2);

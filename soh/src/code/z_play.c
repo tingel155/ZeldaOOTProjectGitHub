@@ -13,6 +13,7 @@
 #include "soh/ResourceManagerHelpers.h"
 #include "soh/SaveManager.h"
 #include "soh/framebuffer_effects.h"
+#include "soh/Enhancements/ZeldaOOTProject/MapEditor/MapEditor.h"
 
 #include <time.h>
 #include <assert.h>
@@ -692,7 +693,9 @@ void Play_Update(PlayState* play) {
     gSegments[5] = VIRTUAL_TO_PHYSICAL(play->objectCtx.status[play->objectCtx.subKeepIndex].segment);
     gSegments[2] = VIRTUAL_TO_PHYSICAL(play->sceneSegment);
 
-    if (FrameAdvance_Update(&play->frameAdvCtx, &input[1])) {
+    // ZeldaOOTProject: the map editor freezes the game (it drives the view itself)
+    isPaused = ZOP_MapEditorFrozen();
+    if (!ZOP_MapEditorFrozen() && FrameAdvance_Update(&play->frameAdvCtx, &input[1])) {
         if ((play->transitionMode == TRANS_MODE_OFF) && (play->transitionTrigger != TRANS_TRIGGER_OFF)) {
             play->transitionMode = TRANS_MODE_SETUP;
         }
@@ -1498,6 +1501,7 @@ void Play_Draw(PlayState* play) {
                 Scene_Draw(play);
                 Room_Draw(play, &play->roomCtx.curRoom, roomDrawFlags & 3);
                 Room_Draw(play, &play->roomCtx.prevRoom, roomDrawFlags & 3);
+                ZOP_MapEditorDrawExtraRooms(play, roomDrawFlags & 3);
             }
         }
 
@@ -1520,7 +1524,9 @@ void Play_Draw(PlayState* play) {
         }
 
         if ((HREG(80) != 10) || (HREG(85) != 0)) {
-            Actor_DrawAll(play, &play->actorCtx);
+            if (!ZOP_MapEditorHideActors()) {
+                Actor_DrawAll(play, &play->actorCtx);
+            }
         }
 
         if ((HREG(80) != 10) || (HREG(86) != 0)) {

@@ -27,6 +27,7 @@
 #include "soh/Enhancements/cosmetics/CosmeticsEditor.h"
 #include "soh/Enhancements/debugger/actorViewer.h"
 #include "soh/Enhancements/debugger/colViewer.h"
+#include "soh/Enhancements/ZeldaOOTProject/MapEditor/MapEditor.h"
 #include "soh/Enhancements/debugger/debugSaveEditor.h"
 #include "soh/Enhancements/debugger/hookDebugger.h"
 #include "soh/Enhancements/debugger/dlViewer.h"
@@ -90,6 +91,7 @@ std::shared_ptr<InputViewerSettingsWindow> mInputViewerSettings;
 std::shared_ptr<CosmeticsEditorWindow> mCosmeticsEditorWindow;
 std::shared_ptr<ActorViewerWindow> mActorViewerWindow;
 std::shared_ptr<ColViewerWindow> mColViewerWindow;
+std::shared_ptr<ZopMapEditorWindow> mZopMapEditorWindow;
 std::shared_ptr<SaveEditorWindow> mSaveEditorWindow;
 std::shared_ptr<HookDebuggerWindow> mHookDebuggerWindow;
 std::shared_ptr<DLViewerWindow> mDLViewerWindow;
@@ -133,6 +135,7 @@ std::vector<std::shared_ptr<Ship::GuiWindow>> GetAllGuiWindows() {
         mCosmeticsEditorWindow,
         mActorViewerWindow,
         mColViewerWindow,
+        mZopMapEditorWindow,
         mSaveEditorWindow,
         mHookDebuggerWindow,
         mDLViewerWindow,
@@ -212,6 +215,9 @@ void SetupGuiElements() {
     mColViewerWindow =
         std::make_shared<ColViewerWindow>(CVAR_WINDOW("CollisionViewer"), "Collision Viewer", ImVec2(520, 600));
     gui->AddGuiWindow(mColViewerWindow);
+    mZopMapEditorWindow =
+        std::make_shared<ZopMapEditorWindow>(CVAR_WINDOW("ZOPMapEditor"), "ZOP Map-Editor", ImVec2(420, 560));
+    gui->AddGuiWindow(mZopMapEditorWindow);
     mSaveEditorWindow = std::make_shared<SaveEditorWindow>(CVAR_WINDOW("SaveEditor"), "Save Editor", ImVec2(520, 600));
     gui->AddGuiWindow(mSaveEditorWindow);
     mHookDebuggerWindow =
@@ -293,6 +299,7 @@ void Destroy() {
     mSaveEditorWindow = nullptr;
     mHookDebuggerWindow = nullptr;
     mColViewerWindow = nullptr;
+    mZopMapEditorWindow = nullptr;
     mActorViewerWindow = nullptr;
     mCosmeticsEditorWindow = nullptr;
     mModMenuWindow = nullptr;
