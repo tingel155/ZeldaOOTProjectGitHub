@@ -462,6 +462,14 @@ void DecodeEntry(std::vector<Mesh>& out, int room, int entry, bool xlu, Gfx* dl)
     mesh.dlPath = (const char*)dl + 7;
     mesh.label = "Raum " + std::to_string(room) + " / Teil " + std::to_string(entry) + (xlu ? " (transparent)" : "");
 
+    // the game runs setup display list 25 before the room meshes (Room_Draw: Gfx_SetupDL_25Opa/Xlu); it sets the
+    // cycle type, texture filter, perspective correction and geometry mode the room lists build on
+    Gfx setup[2];
+    Gfx_SetupDL(&setup[0], SETUPDL_25);
+    setup[1] = gsSPEndDisplayList();
+    DecodeDl(st, setup, 0);
+    st.matDirty = true;
+
     DecodeDl(st, DlByPath(st, mesh.dlPath.c_str()), 0);
     if (!mesh.pos.empty()) {
         FinishMesh(mesh);

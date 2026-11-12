@@ -23,6 +23,9 @@
 #include <fast/resource/type/Texture.h>
 #include <stb_image.h>
 
+// OTRGlobals.cpp: drops the renderer's cached upload of the texture at this address
+extern "C" void Gfx_TextureCacheDelete(const uint8_t* addr);
+
 extern "C" {
 #include <z64.h>
 #include "macros.h"
@@ -42,9 +45,14 @@ struct Built {
     std::vector<Vtx> vtx;
     std::vector<std::unique_ptr<std::string>> texPaths; // "__OTR__..." strings the display list points at
     std::vector<std::string> cachedTextures;            // resource paths to unload with it
+    std::vector<std::shared_ptr<Fast::Texture>> textures;
 };
 
 std::map<std::string, Built> sBuilt; // by replaced display list path
+// Replaced builds are kept until the game ends: the frame being drawn (and the frame interpolation) can still point at
+// their display list, vertices and texture data, and freed texture memory could come back at the same address, which
+// the renderer's texture cache would mistake for the old texture.
+std::vector<Built> sRetired;
 std::vector<Override> sOverrides;
 int sBuildCounter = 0;
 
@@ -88,7 +96,8 @@ struct TexInfo {
 };
 
 // Loads a PNG as an RGBA32 texture resource (power-of-two size, HD scale factors when bigger than one load)
-bool MakeTexture(const std::string& png, const std::string& resPath, TexInfo& out, std::string& error) {
+bool MakeTexture(const std::string& png, const std::string& resPath, TexInfo& out, std::string& error,
+                 std::shared_ptr<Fast::Texture>& keep) {
     std::ifstream f(PathU8(png), std::ios::binary);
     if (!f) {
         error = "Textur nicht gefunden: " + png;
@@ -136,7 +145,10 @@ bool MakeTexture(const std::string& png, const std::string& resPath, TexInfo& ou
     tex->ImageData = (uint8_t*)buffer->data();
     tex->ImageDataSize = (uint32_t)buffer->size();
 
+    // the renderer caches uploaded textures by data address: drop whatever it had at this one
+    Gfx_TextureCacheDelete((const uint8_t*)buffer->data());
     Ship::Context::GetRawInstance()->GetResourceManager()->CacheExternalResource(resPath, tex);
+    keep = tex;
     out.path = resPath;
     out.vw = vw;
     out.vh = vh;
@@ -192,8 +204,10 @@ bool Build(const fs::path& file, Override& ov) {
         }
         std::string resPath = "zop_maps/" + std::to_string(version) + "/" + U8(file.stem()) + "_" + std::to_string(m);
         std::string err;
-        if (MakeTexture(U8(p), resPath, texOf[m], err)) {
+        std::shared_ptr<Fast::Texture> keep;
+        if (MakeTexture(U8(p), resPath, texOf[m], err, keep)) {
             built.cachedTextures.push_back(resPath);
+            built.textures.push_back(keep);
         } else if (ov.error.empty()) {
             ov.error = err; // still builds, that material just stays untextured
         }
@@ -245,15 +259,23 @@ bool Build(const fs::path& file, Override& ov) {
             const TexInfo& ti = (m >= 0 && m < (int)texOf.size()) ? texOf[m] : TexInfo();
             bool textured = !ti.path.empty();
 
-            uint32_t defH = (G_CYC_2CYCLE | G_TF_BILERP | G_TC_FILT | G_TP_PERSP | G_TD_CLAMP | G_TL_TILE) & 0xFFFFFF;
+            uint32_t defH = (G_AD_NOTPATTERN | G_CD_MAGICSQ | G_CK_NONE | G_TC_FILT | G_TF_BILERP | G_TT_NONE | G_TL_TILE |
+                            G_TD_CLAMP | G_TP_PERSP | G_CYC_2CYCLE | G_PM_NPRIMITIVE) & 0xFFFFFF; // setup list 25
             uint32_t defL = ov.xlu ? (G_RM_FOG_SHADE_A | G_RM_AA_ZB_XLU_SURF2) : (G_RM_FOG_SHADE_A | G_RM_AA_ZB_OPA_SURF2);
             uint32_t otherH = ParseHex(info, "otherModeH", defH);
+            if (otherH == 0) {
+                otherH = defH; // exported before the decoder ran the room setup list: the game's defaults
+            }
             uint32_t otherL = ParseHex(info, "otherModeL", defL);
             // plain RGBA32 now: no palette, no mip levels
             otherH &= ~((3u << G_MDSFT_TEXTLUT) | (1u << G_MDSFT_TEXTLOD) | (3u << G_MDSFT_TEXTDETAIL));
             bool twoCycle = ((otherH >> G_MDSFT_CYCLETYPE) & 3) == (G_CYC_2CYCLE >> G_MDSFT_CYCLETYPE);
             uint32_t geom = ParseHex(info, "geometryMode",
                                      G_ZBUFFER | G_SHADE | G_CULL_BACK | G_FOG | G_SHADING_SMOOTH);
+            if (!(geom & G_ZBUFFER)) {
+                // exported before the decoder ran the room setup list, which turns these on
+                geom |= G_ZBUFFER | G_SHADING_SMOOTH;
+            }
             geom = (geom & ~kGeomLighting) | G_SHADE;
 
             g.push_back(gsDPPipeSync());
@@ -328,6 +350,9 @@ bool Build(const fs::path& file, Override& ov) {
         }
     }
     rm->CacheExternalResource(ov.dlPath, built.dl);
+    if (old != sBuilt.end()) {
+        sRetired.push_back(std::move(old->second));
+    }
     sBuilt[ov.dlPath] = std::move(built);
     return true;
 }
@@ -382,6 +407,7 @@ bool ApplyOverrides(bool onlyChanged) {
                 for (const std::string& t : it->second.cachedTextures) {
                     rm->UnloadResource(t);
                 }
+                sRetired.push_back(std::move(it->second));
                 sBuilt.erase(it);
             }
             rm->UnloadResource(o.dlPath);
