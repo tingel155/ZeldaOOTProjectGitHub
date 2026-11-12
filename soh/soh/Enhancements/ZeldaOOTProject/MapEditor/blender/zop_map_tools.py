@@ -8,12 +8,13 @@
 #   - unlit (emission), so it looks like in the game
 #
 # Install: Edit > Preferences > Add-ons > (arrow menu) Install from Disk... > this file.
-# Use:     File > Import > ZOP Map-Mesh (.fbx)
+# Use:     File > Import > ZOP Map-Mesh (.fbx), edit, then File > Export > ZOP Map-Mesh (ins Spiel): the game
+#          picks the file up from zop_maps/ next to soh.exe and shows the change right away.
 
 bl_info = {
     "name": "ZOP Map Tools",
     "author": "ZeldaOOTProject",
-    "version": (0, 1, 0),
+    "version": (0, 2, 0),
     "blender": (4, 2, 0),
     "location": "File > Import > ZOP Map-Mesh (.fbx)",
     "description": "Import meshes from the ZeldaOOTProject in-game map editor with N64-accurate materials",
@@ -206,17 +207,149 @@ class IMPORT_SCENE_OT_zop_fbx(bpy.types.Operator, ImportHelper):
         return {"FINISHED"}
 
 
+def _first_image(mat):
+    if mat is None or not mat.use_nodes:
+        return None
+    for node in mat.node_tree.nodes:
+        if node.type == "TEX_IMAGE" and node.image is not None:
+            return node.image
+    return None
+
+
+def _save_png(image, dest):
+    """Writes the image (including unsaved paint edits) as PNG to dest."""
+    # always written from Blender's pixels: edits like Image > Resize don't mark the image as changed
+    os.makedirs(os.path.dirname(dest), exist_ok=True)
+    w, h = image.size
+    pixels = [0.0] * (w * h * 4)
+    image.pixels.foreach_get(pixels)
+    out = bpy.data.images.new("zop_export_tmp", w, h, alpha=True)
+    out.pixels.foreach_set(pixels)
+    out.filepath_raw = dest
+    out.file_format = "PNG"
+    out.save()
+    bpy.data.images.remove(out)
+
+
+def zop_export(obj, out_dir=None):
+    """Writes obj as <name>.zopmesh.json for the game; returns the file path."""
+    sidecar = obj.get("zop_sidecar")
+    if not sidecar or not os.path.exists(sidecar):
+        raise RuntimeError(f"{obj.name}: kein ZOP-Mesh (mit 'ZOP Map-Mesh' importieren)")
+    with open(sidecar, encoding="utf-8") as f:
+        head = json.load(f)
+    if out_dir is None:
+        out_dir = os.path.join(os.path.dirname(os.path.dirname(sidecar)), "zop_maps")
+    stem = os.path.basename(sidecar)[: -len(".zop.json")]
+    os.makedirs(out_dir, exist_ok=True)
+
+    dg = bpy.context.evaluated_depsgraph_get()
+    eo = obj.evaluated_get(dg)
+    me = eo.to_mesh()
+    me.calc_loop_triangles()
+    mw = obj.matrix_world
+    uv_layer = me.uv_layers.get("UVMap") or me.uv_layers.active
+    col_attr = me.color_attributes.get("Col")
+
+    # materials (textures copied next to the file so the mod folder is self-contained)
+    materials = []
+    for i, slot in enumerate(obj.material_slots):
+        mat = slot.material
+        info = {}
+        if mat is not None and "zop_material" in mat:
+            info = json.loads(mat["zop_material"])
+        info["name"] = f"mat{i}"
+        image = _first_image(mat)
+        if image is not None:
+            rel = f"textures/{stem}_{i}.png"
+            _save_png(image, os.path.join(out_dir, rel))
+            info["png"] = rel
+        else:
+            info["png"] = ""
+        materials.append(info)
+
+    positions, uvs, colors, tri_mats = [], [], [], []
+    for tri in me.loop_triangles:
+        for k in range(3):
+            loop = tri.loops[k]
+            w = mw @ me.vertices[tri.vertices[k]].co
+            positions += [round(w.x * 100.0, 2), round(w.z * 100.0, 2), round(-w.y * 100.0, 2)]
+            if uv_layer is not None:
+                u, v = uv_layer.data[loop].uv
+            else:
+                u, v = 0.0, 0.0
+            uvs += [round(u, 5), round(v, 5)]
+            if col_attr is not None:
+                idx = loop if col_attr.domain == "CORNER" else tri.vertices[k]
+                c = col_attr.data[idx]
+                c = getattr(c, "color_srgb", c.color)
+                colors += [round(c[0], 4), round(c[1], 4), round(c[2], 4), round(c[3], 4)]
+            else:
+                colors += [1.0, 1.0, 1.0, 1.0]
+        tri_mats.append(tri.material_index if tri.material_index < len(materials) else 0)
+    eo.to_mesh_clear()
+
+    out = {
+        "scene": head.get("scene"),
+        "room": head.get("room"),
+        "entry": head.get("entry"),
+        "xlu": head.get("xlu"),
+        "displayList": head.get("displayList"),
+        "materials": materials,
+        "positions": positions,
+        "uvs": uvs,
+        "colors": colors,
+        "triMaterials": tri_mats,
+    }
+    path = os.path.join(out_dir, stem + ".zopmesh.json")
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(out, f, separators=(",", ":"))
+    os.replace(tmp, path)  # the game never sees a half-written file
+    return path
+
+
+class EXPORT_SCENE_OT_zop_mesh(bpy.types.Operator):
+    """Send the selected ZOP meshes back into the game (zop_maps folder next to soh.exe)"""
+
+    bl_idname = "export_scene.zop_mesh"
+    bl_label = "Export ZOP Map-Mesh"
+    bl_options = {"REGISTER"}
+
+    def execute(self, context):
+        objs = [o for o in context.selected_objects if o.type == "MESH"]
+        if not objs and context.active_object is not None:
+            objs = [context.active_object]
+        done = []
+        for obj in objs:
+            try:
+                done.append(zop_export(obj))
+            except RuntimeError as e:
+                self.report({"WARNING"}, str(e))
+        if done:
+            self.report({"INFO"}, f"ZOP: {len(done)} Mesh(es) ins Spiel exportiert ({os.path.dirname(done[0])})")
+        return {"FINISHED"} if done else {"CANCELLED"}
+
+
 def _menu_import(self, context):
     self.layout.operator(IMPORT_SCENE_OT_zop_fbx.bl_idname, text="ZOP Map-Mesh (.fbx)")
 
 
+def _menu_export(self, context):
+    self.layout.operator(EXPORT_SCENE_OT_zop_mesh.bl_idname, text="ZOP Map-Mesh (ins Spiel)")
+
+
 def register():
     bpy.utils.register_class(IMPORT_SCENE_OT_zop_fbx)
+    bpy.utils.register_class(EXPORT_SCENE_OT_zop_mesh)
     bpy.types.TOPBAR_MT_file_import.append(_menu_import)
+    bpy.types.TOPBAR_MT_file_export.append(_menu_export)
 
 
 def unregister():
+    bpy.types.TOPBAR_MT_file_export.remove(_menu_export)
     bpy.types.TOPBAR_MT_file_import.remove(_menu_import)
+    bpy.utils.unregister_class(EXPORT_SCENE_OT_zop_mesh)
     bpy.utils.unregister_class(IMPORT_SCENE_OT_zop_fbx)
 
 

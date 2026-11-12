@@ -10,6 +10,7 @@
 
 #include "MapEditor.h"
 #include "MapMeshes.h"
+#include "MapImport.h"
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -21,6 +22,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
@@ -84,6 +86,7 @@ std::vector<Gfx> sHlDl;
 bool sClickArmed = false;
 ImVec2 sClickStart;
 std::string sStatus;
+int sOverridePoll = 0;
 
 bool DrawAllRooms() {
     return CVarGetInteger(CVAR_ZOP_MAPEDITOR("AllRooms"), 1);
@@ -512,6 +515,13 @@ void OnDrawBegin() {
     if (!sCam.init) {
         InitCamFromGame();
     }
+    if (++sOverridePoll >= 20) {
+        sOverridePoll = 0;
+        if (ZopMap::ApplyOverrides(true)) {
+            sSelected.clear();
+            sSelectionVersion++;
+        }
+    }
     // no frozen area name over the view
     gPlayState->actorCtx.titleCtx.alpha = 0;
     gPlayState->actorCtx.titleCtx.durationTimer = 0;
@@ -744,6 +754,13 @@ extern "C" void ZOP_MapEditorDrawExtraRooms(PlayState* play, unsigned int flags)
 void ZopMapEditorWindow::InitElement() {
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnPlayDrawBegin>(OnDrawBegin);
     GameInteractor::Instance->RegisterGameHook<GameInteractor::OnPlayDrawEnd>(OnDrawEnd);
+    // edited meshes are in the game also without the editor: built when a scene starts
+    GameInteractor::Instance->RegisterGameHook<GameInteractor::OnSceneInit>([](int16_t) {
+        if (ZopMap::ApplyOverrides(true)) {
+            sSelected.clear();
+            sSelectionVersion++;
+        }
+    });
 }
 
 void ZopMapEditorWindow::DrawElement() {
@@ -895,6 +912,41 @@ void ZopMapEditorWindow::DrawElement() {
                 ImGui::TreePop();
             }
             ImGui::TreePop();
+        }
+    }
+
+    ImGui::SeparatorText("Geänderte Meshes (aus Blender)");
+    {
+        ImGui::TextWrapped("Ordner: %s", ZopMap::OverrideDir().c_str());
+        if (ImGui::Button("Neu laden")) {
+            ZopMap::ApplyOverrides(false);
+            sSelected.clear();
+            sSelectionVersion++;
+        }
+        const auto& ovs = ZopMap::Overrides();
+        if (ovs.empty()) {
+            ImGui::TextDisabled("Keine. In Blender: Datei > Export > ZOP Map-Mesh.");
+        }
+        std::string removeFile;
+        for (size_t i = 0; i < ovs.size(); i++) {
+            const ZopMap::Override& o = ovs[i];
+            std::string name = std::filesystem::path(std::u8string(o.file.begin(), o.file.end())).filename().string();
+            ImGui::PushID((int)i);
+            ImGui::TextUnformatted(name.c_str());
+            ImGui::SameLine();
+            ImGui::TextDisabled("(%d Dreiecke)", o.tris);
+            if (!o.error.empty()) {
+                ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.4f, 1.0f), "%s", o.error.c_str());
+            }
+            if (ImGui::SmallButton("Original wiederherstellen")) {
+                removeFile = o.file;
+            }
+            ImGui::PopID();
+        }
+        if (!removeFile.empty()) {
+            ZopMap::RemoveOverride(removeFile);
+            sSelected.clear();
+            sSelectionVersion++;
         }
     }
 
